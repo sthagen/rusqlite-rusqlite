@@ -600,17 +600,10 @@ impl Values<'_> {
             FromSqlError::Other(err) => {
                 Error::FromSqlConversionFailure(idx, value.data_type(), err)
             }
-            FromSqlError::OutOfRange(i) => Error::IntegralValueOutOfRange(idx, i),
-            #[cfg(feature = "i128_blob")]
-            #[cfg_attr(docsrs, doc(cfg(feature = "i128_blob")))]
-            FromSqlError::InvalidI128Size(_) => {
-                Error::InvalidColumnType(idx, idx.to_string(), value.data_type())
-            }
-            #[cfg(feature = "uuid")]
-            #[cfg_attr(docsrs, doc(cfg(feature = "uuid")))]
-            FromSqlError::InvalidUuidSize(_) => {
+            FromSqlError::InvalidBlobSize { .. } => {
                 Error::FromSqlConversionFailure(idx, value.data_type(), Box::new(err))
             }
+            FromSqlError::OutOfRange(i) => Error::IntegralValueOutOfRange(idx, i),
         })
     }
 
@@ -730,7 +723,7 @@ impl InnerConnection {
 pub fn escape_double_quote(identifier: &str) -> Cow<'_, str> {
     if identifier.contains('"') {
         // escape quote by doubling them
-        Owned(identifier.replace("\"", "\"\""))
+        Owned(identifier.replace('"', "\"\""))
     } else {
         Borrowed(identifier)
     }
