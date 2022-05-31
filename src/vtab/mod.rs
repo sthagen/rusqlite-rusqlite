@@ -188,7 +188,7 @@ pub fn eponymous_only_module<'vtab, T: VTab<'vtab>>() -> &'static Module<'vtab, 
 #[repr(i32)]
 #[non_exhaustive]
 #[cfg(feature = "modern_sqlite")] // 3.7.7
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum VTabConfig {
     /// Equivalent to SQLITE_VTAB_CONSTRAINT_SUPPORT
     ConstraintSupport = 1,
@@ -322,7 +322,7 @@ pub trait UpdateVTab<'vtab>: CreateVTab<'vtab> {
 
 /// Index constraint operator.
 /// See [Virtual Table Constraint Operator Codes](https://sqlite.org/c3ref/c_index_constraint_eq.html) for details.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 #[allow(non_snake_case, non_camel_case_types, missing_docs)]
 #[allow(clippy::upper_case_acronyms)]
 pub enum IndexConstraintOp {
@@ -963,7 +963,7 @@ where
         .map(|&cs| CStr::from_ptr(cs).to_bytes()) // FIXME .to_str() -> Result<&str, Utf8Error>
         .collect::<Vec<_>>();
     match T::create(&mut conn, aux.as_ref(), &vec[..]) {
-        Ok((sql, vtab)) => match ::std::ffi::CString::new(sql) {
+        Ok((sql, vtab)) => match std::ffi::CString::new(sql) {
             Ok(c_sql) => {
                 let rc = ffi::sqlite3_declare_vtab(db, c_sql.as_ptr());
                 if rc == ffi::SQLITE_OK {
@@ -1015,7 +1015,7 @@ where
         .map(|&cs| CStr::from_ptr(cs).to_bytes()) // FIXME .to_str() -> Result<&str, Utf8Error>
         .collect::<Vec<_>>();
     match T::connect(&mut conn, aux.as_ref(), &vec[..]) {
-        Ok((sql, vtab)) => match ::std::ffi::CString::new(sql) {
+        Ok((sql, vtab)) => match std::ffi::CString::new(sql) {
             Ok(c_sql) => {
                 let rc = ffi::sqlite3_declare_vtab(db, c_sql.as_ptr());
                 if rc == ffi::SQLITE_OK {
