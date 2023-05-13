@@ -240,7 +240,7 @@ mod build_bundled {
             cfg.flag("-DHAVE_LOCALTIME_R");
         }
         // Target wasm32-wasi can't compile the default VFS
-        if is_compiler("wasm32-wasi") {
+        if env::var("TARGET").map_or(false, |v| v == "wasm32-wasi") {
             cfg.flag("-DSQLITE_OS_OTHER")
                 // https://github.com/rust-lang/rust/issues/74393
                 .flag("-DLONGDOUBLE_TYPE=double");
@@ -267,6 +267,11 @@ mod build_bundled {
             cfg.flag(&format!("-DSQLITE_MAX_EXPR_DEPTH={limit}"));
         }
         println!("cargo:rerun-if-env-changed=SQLITE_MAX_EXPR_DEPTH");
+
+        if let Ok(limit) = env::var("SQLITE_MAX_COLUMN") {
+            cfg.flag(&format!("-DSQLITE_MAX_COLUMN={limit}"));
+        }
+        println!("cargo:rerun-if-env-changed=SQLITE_MAX_COLUMN");
 
         if let Ok(extras) = env::var("LIBSQLITE3_FLAGS") {
             for extra in extras.split_whitespace() {
