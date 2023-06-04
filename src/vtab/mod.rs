@@ -195,6 +195,8 @@ pub enum VTabConfig {
     Innocuous = 2,
     /// Equivalent to SQLITE_VTAB_DIRECTONLY
     DirectOnly = 3,
+    /// Equivalent to SQLITE_VTAB_USES_ALL_SCHEMAS
+    UsesAllSchemas = 4,
 }
 
 /// `feature = "vtab"`
@@ -882,7 +884,7 @@ pub fn dequote(s: &str) -> &str {
         return s;
     }
     match s.bytes().next() {
-        Some(b) if b == b'"' || b == b'\'' => match s.bytes().rev().next() {
+        Some(b) if b == b'"' || b == b'\'' => match s.bytes().next_back() {
             Some(e) if e == b => &s[1..s.len() - 1], // FIXME handle inner escaped quote(s)
             _ => s,
         },
