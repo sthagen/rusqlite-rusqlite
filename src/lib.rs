@@ -74,6 +74,7 @@ use crate::raw_statement::RawStatement;
 use crate::types::ValueRef;
 
 pub use crate::cache::CachedStatement;
+#[cfg(feature = "column_decltype")]
 pub use crate::column::Column;
 pub use crate::error::{to_sqlite_error, Error};
 pub use crate::ffi::ErrorCode;
@@ -82,6 +83,8 @@ pub use crate::load_extension_guard::LoadExtensionGuard;
 pub use crate::params::{params_from_iter, Params, ParamsFromIter};
 pub use crate::row::{AndThenRows, Map, MappedRows, Row, RowIndex, Rows};
 pub use crate::statement::{Statement, StatementStatus};
+#[cfg(feature = "modern_sqlite")]
+pub use crate::transaction::TransactionState;
 pub use crate::transaction::{DropBehavior, Savepoint, Transaction, TransactionBehavior};
 pub use crate::types::ToSql;
 pub use crate::version::*;
@@ -568,7 +571,7 @@ impl Connection {
     #[inline]
     pub fn execute<P: Params>(&self, sql: &str, params: P) -> Result<usize> {
         self.prepare(sql)
-            .and_then(|mut stmt| stmt.check_no_tail().and_then(|_| stmt.execute(params)))
+            .and_then(|mut stmt| stmt.check_no_tail().and_then(|()| stmt.execute(params)))
     }
 
     /// Returns the path to the database file, if one exists and is known.
@@ -651,7 +654,7 @@ impl Connection {
 
     // https://sqlite.org/tclsqlite.html#onecolumn
     #[cfg(test)]
-    pub(crate) fn one_column<T: crate::types::FromSql>(&self, sql: &str) -> Result<T> {
+    pub(crate) fn one_column<T: types::FromSql>(&self, sql: &str) -> Result<T> {
         self.query_row(sql, [], |r| r.get(0))
     }
 
@@ -912,7 +915,7 @@ impl Connection {
     /// This function is unsafe because improper use may impact the Connection.
     /// In particular, it should only be called on connections created
     /// and owned by the caller, e.g. as a result of calling
-    /// ffi::sqlite3_open().
+    /// `ffi::sqlite3_open`().
     #[inline]
     pub unsafe fn from_handle_owned(db: *mut ffi::sqlite3) -> Result<Connection> {
         let db = InnerConnection::new(db, true);
