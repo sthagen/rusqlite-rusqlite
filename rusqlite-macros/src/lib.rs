@@ -20,16 +20,15 @@ type Result<T> = std::result::Result<T, String>;
 
 fn try_bind(input: TokenStream) -> Result<TokenStream> {
     let (stmt, literal) = {
-        let mut iter = input.clone().into_iter();
+        let mut iter = input.into_iter();
         let stmt = iter.next().unwrap();
         let literal = iter.next().unwrap();
         assert!(iter.next().is_none());
         (stmt, literal)
     };
 
-    let literal = match into_literal(&literal) {
-        Some(it) => it,
-        None => return Err("expected a plain string literal".to_string()),
+    let Some(literal) = into_literal(&literal) else {
+        return Err("expected a plain string literal".to_string());
     };
     let call_site = literal.span();
     let string_lit = match StringLit::try_from(literal) {
