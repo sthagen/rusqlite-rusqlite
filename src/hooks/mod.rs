@@ -7,7 +7,7 @@ use std::ptr;
 
 use crate::ffi;
 
-use crate::{Connection, InnerConnection};
+use crate::{error::decode_result_raw, Connection, DatabaseName, InnerConnection, Result};
 
 #[cfg(feature = "preupdate_hook")]
 pub use preupdate_hook::*;
@@ -383,6 +383,38 @@ impl Connection {
         self.db.borrow_mut().update_hook(hook);
     }
 
+    /// Register a callback that is invoked each time data is committed to a database in wal mode.
+    ///
+    /// A single database handle may have at most a single write-ahead log callback registered at one time.
+    /// Calling `wal_hook` replaces any previously registered write-ahead log callback.
+    /// Note that the `sqlite3_wal_autocheckpoint()` interface and the `wal_autocheckpoint` pragma
+    /// both invoke `sqlite3_wal_hook()` and will overwrite any prior `sqlite3_wal_hook()` settings.
+    pub fn wal_hook(&self, hook: Option<fn(&Wal, c_int) -> Result<()>>) {
+        unsafe extern "C" fn wal_hook_callback(
+            client_data: *mut c_void,
+            db: *mut ffi::sqlite3,
+            db_name: *const c_char,
+            pages: c_int,
+        ) -> c_int {
+            let hook_fn: fn(&Wal, c_int) -> Result<()> = std::mem::transmute(client_data);
+            let wal = Wal { db, db_name };
+            catch_unwind(|| match hook_fn(&wal, pages) {
+                Ok(_) => ffi::SQLITE_OK,
+                Err(e) => e
+                    .sqlite_error()
+                    .map_or(ffi::SQLITE_ERROR, |x| x.extended_code),
+            })
+            .unwrap_or_default()
+        }
+        let c = self.db.borrow_mut();
+        match hook {
+            Some(f) => unsafe {
+                ffi::sqlite3_wal_hook(c.db(), Some(wal_hook_callback), f as *mut c_void)
+            },
+            None => unsafe { ffi::sqlite3_wal_hook(c.db(), None, ptr::null_mut()) },
+        };
+    }
+
     /// Register a query progress callback.
     ///
     /// The parameter `num_ops` is the approximate number of virtual machine
@@ -406,6 +438,57 @@ impl Connection {
         F: for<'r> FnMut(AuthContext<'r>) -> Authorization + Send + 'static,
     {
         self.db.borrow_mut().authorizer(hook);
+    }
+}
+
+/// Checkpoint mode
+#[derive(Clone, Copy)]
+#[repr(i32)]
+#[non_exhaustive]
+pub enum CheckpointMode {
+    /// Do as much as possible w/o blocking
+    PASSIVE = ffi::SQLITE_CHECKPOINT_PASSIVE,
+    /// Wait for writers, then checkpoint
+    FULL = ffi::SQLITE_CHECKPOINT_FULL,
+    /// Like FULL but wait for readers
+    RESTART = ffi::SQLITE_CHECKPOINT_RESTART,
+    /// Like RESTART but also truncate WA
+    TRUNCATE = ffi::SQLITE_CHECKPOINT_TRUNCATE,
+}
+
+/// Write-Ahead Log
+pub struct Wal {
+    db: *mut ffi::sqlite3,
+    db_name: *const c_char,
+}
+
+impl Wal {
+    /// Checkpoint a database
+    pub fn checkpoint(&self) -> Result<()> {
+        unsafe { decode_result_raw(self.db, ffi::sqlite3_wal_checkpoint(self.db, self.db_name)) }
+    }
+    /// Checkpoint a database
+    pub fn checkpoint_v2(&self, mode: CheckpointMode) -> Result<(c_int, c_int)> {
+        let mut n_log = 0;
+        let mut n_ckpt = 0;
+        unsafe {
+            decode_result_raw(
+                self.db,
+                ffi::sqlite3_wal_checkpoint_v2(
+                    self.db,
+                    self.db_name,
+                    mode as c_int,
+                    &mut n_log,
+                    &mut n_ckpt,
+                ),
+            )?
+        };
+        Ok((n_log, n_ckpt))
+    }
+
+    /// Name of the database that was written to
+    pub fn name(&self) -> DatabaseName<'_> {
+        DatabaseName::from_cstr(unsafe { std::ffi::CStr::from_ptr(self.db_name) })
     }
 }
 
@@ -771,7 +854,7 @@ unsafe fn expect_optional_utf8<'a>(
 #[cfg(test)]
 mod test {
     use super::Action;
-    use crate::{Connection, Result};
+    use crate::{Connection, DatabaseName, Result};
     use std::sync::atomic::{AtomicBool, Ordering};
 
     #[test]
@@ -895,6 +978,39 @@ mod test {
         db.authorizer(None::<fn(AuthContext<'_>) -> Authorization>);
         db.execute_batch("PRAGMA user_version=1")?; // Disallowed by first authorizer, but it's now removed.
 
+        Ok(())
+    }
+
+    #[test]
+    fn wal_hook() -> Result<()> {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("wal-hook.db3");
+
+        let db = Connection::open(&path)?;
+        let journal_mode: String =
+            db.pragma_update_and_check(None, "journal_mode", "wal", |row| row.get(0))?;
+        assert_eq!(journal_mode, "wal");
+
+        static CALLED: AtomicBool = AtomicBool::new(false);
+        db.wal_hook(Some(|wal, pages| {
+            assert_eq!(wal.name(), DatabaseName::Main);
+            assert!(pages > 0);
+            CALLED.swap(true, Ordering::Relaxed);
+            wal.checkpoint()
+        }));
+        db.execute_batch("CREATE TABLE x(c);")?;
+        assert!(CALLED.load(Ordering::Relaxed));
+
+        db.wal_hook(Some(|wal, pages| {
+            assert!(pages > 0);
+            let (log, ckpt) = wal.checkpoint_v2(super::CheckpointMode::TRUNCATE)?;
+            assert_eq!(log, 0);
+            assert_eq!(ckpt, 0);
+            Ok(())
+        }));
+        db.execute_batch("CREATE TABLE y(c);")?;
+
+        db.wal_hook(None);
         Ok(())
     }
 }
