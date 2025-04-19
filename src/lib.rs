@@ -566,14 +566,16 @@ impl Connection {
     pub fn execute_batch(&self, sql: &str) -> Result<()> {
         let mut sql = sql;
         while !sql.is_empty() {
-            let stmt = self.prepare(sql)?;
+            let (stmt, tail) = self
+                .db
+                .borrow_mut()
+                .prepare(self, sql, PrepFlags::default())?;
             if !stmt.stmt.is_null() && stmt.step()? {
                 // Some PRAGMA may return rows
                 if false {
                     return Err(Error::ExecuteReturnedResults);
                 }
             }
-            let tail = stmt.stmt.tail();
             if tail == 0 || tail >= sql.len() {
                 break;
             }
@@ -634,8 +636,7 @@ impl Connection {
     /// or if the underlying SQLite call fails.
     #[inline]
     pub fn execute<P: Params>(&self, sql: &str, params: P) -> Result<usize> {
-        self.prepare(sql)
-            .and_then(|mut stmt| stmt.check_no_tail().and_then(|()| stmt.execute(params)))
+        self.prepare(sql).and_then(|mut stmt| stmt.execute(params))
     }
 
     /// Returns the path to the database file, if one exists and is known.
@@ -702,7 +703,6 @@ impl Connection {
         F: FnOnce(&Row<'_>) -> Result<T>,
     {
         let mut stmt = self.prepare(sql)?;
-        stmt.check_no_tail()?;
         stmt.query_row(params, f)
     }
 
@@ -745,7 +745,6 @@ impl Connection {
         E: From<Error>,
     {
         let mut stmt = self.prepare(sql)?;
-        stmt.check_no_tail()?;
         let mut rows = stmt.query(params)?;
 
         rows.get_expected_row().map_err(E::from).and_then(f)
@@ -782,7 +781,12 @@ impl Connection {
     /// or if the underlying SQLite call fails.
     #[inline]
     pub fn prepare_with_flags(&self, sql: &str, flags: PrepFlags) -> Result<Statement<'_>> {
-        self.db.borrow_mut().prepare(self, sql, flags)
+        let (stmt, tail) = self.db.borrow_mut().prepare(self, sql, flags)?;
+        if tail != 0 && !self.prepare(&sql[tail..])?.stmt.is_null() {
+            Err(Error::MultipleStatement)
+        } else {
+            Ok(stmt)
+        }
     }
 
     /// Close the SQLite connection.
@@ -1146,8 +1150,11 @@ impl<'conn> fallible_iterator::FallibleIterator for Batch<'conn, '_> {
     fn next(&mut self) -> Result<Option<Statement<'conn>>> {
         while self.tail < self.sql.len() {
             let sql = &self.sql[self.tail..];
-            let next = self.conn.prepare(sql)?;
-            let tail = next.stmt.tail();
+            let (next, tail) =
+                self.conn
+                    .db
+                    .borrow_mut()
+                    .prepare(self.conn, sql, PrepFlags::default())?;
             if tail == 0 {
                 self.tail = self.sql.len();
             } else {
@@ -1549,7 +1556,6 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "extra_check")]
     fn test_execute_multiple() {
         let db = checked_memory_handle();
         let err = db
@@ -1562,11 +1568,8 @@ mod test {
             Error::MultipleStatement => (),
             _ => panic!("Unexpected error: {err}"),
         }
-        if false {
-            // FIXME
-            db.execute("CREATE TABLE t(c); -- bim", [])
-                .expect("Tail comment should be ignored");
-        }
+        db.execute("CREATE TABLE t(c); -- bim", [])
+            .expect("Tail comment should be ignored");
     }
 
     #[test]
@@ -1679,9 +1682,12 @@ mod test {
             err => panic!("Unexpected error {err}"),
         }
 
-        let bad_query_result = db.query_row("NOT A PROPER QUERY; test123", [], |_| Ok(()));
+        db.query_row("NOT A PROPER QUERY; test123", [], |_| Ok(()))
+            .unwrap_err();
 
-        bad_query_result.unwrap_err();
+        db.query_row("SELECT 1; SELECT 2;", [], |_| Ok(()))
+            .unwrap_err();
+
         Ok(())
     }
 
