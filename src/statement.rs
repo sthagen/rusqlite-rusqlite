@@ -381,6 +381,33 @@ impl Statement<'_> {
         rows.get_expected_row().and_then(f)
     }
 
+    /// Convenience method to execute a query that is expected to return exactly
+    /// one row.
+    ///
+    /// Returns `Err(QueryReturnedMoreThanOneRow)` if the query returns more than one row.
+    ///
+    /// Returns `Err(QueryReturnedNoRows)` if no results are returned. If the
+    /// query truly is optional, you can call
+    /// [`.optional()`](crate::OptionalExtension::optional) on the result of
+    /// this to get a `Result<Option<T>>` (requires that the trait
+    /// `rusqlite::OptionalExtension` is imported).
+    ///
+    /// # Failure
+    ///
+    /// Will return `Err` if the underlying SQLite call fails.
+    pub fn query_one<T, P, F>(&mut self, params: P, f: F) -> Result<T>
+    where
+        P: Params,
+        F: FnOnce(&Row<'_>) -> Result<T>,
+    {
+        let mut rows = self.query(params)?;
+        let row = rows.get_expected_row().and_then(f)?;
+        if rows.next()?.is_some() {
+            return Err(Error::QueryReturnedMoreThanOneRow);
+        }
+        Ok(row)
+    }
+
     /// Consumes the statement.
     ///
     /// Functionally equivalent to the `Drop` implementation, but allows
@@ -1018,7 +1045,7 @@ mod test {
         let mut stmt = db.prepare("INSERT INTO test (x, y) VALUES (:x, :y)")?;
         stmt.execute(&[(":x", "one")])?;
 
-        let result: Option<String> = db.one_column("SELECT y FROM test WHERE x = 'one'")?;
+        let result: Option<String> = db.one_column("SELECT y FROM test WHERE x = 'one'", [])?;
         assert!(result.is_none());
         Ok(())
     }
@@ -1064,7 +1091,7 @@ mod test {
         stmt.execute(&[(":x", "one")])?;
         stmt.execute(&[(c":y", "two")])?;
 
-        let result: String = db.one_column("SELECT x FROM test WHERE y = 'two'")?;
+        let result: String = db.one_column("SELECT x FROM test WHERE y = 'two'", [])?;
         assert_eq!(result, "one");
         Ok(())
     }
@@ -1167,6 +1194,22 @@ mod test {
         let mut stmt = db.prepare("SELECT y FROM foo WHERE x = ?1")?;
         let y: Result<i64> = stmt.query_row([1i32], |r| r.get(0));
         assert_eq!(3i64, y?);
+        Ok(())
+    }
+
+    #[test]
+    fn query_one() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.execute_batch("CREATE TABLE foo(x INTEGER, y INTEGER);")?;
+        let mut stmt = db.prepare("SELECT y FROM foo WHERE x = ?1")?;
+        let y: Result<i64> = stmt.query_one([1i32], |r| r.get(0));
+        assert_eq!(Error::QueryReturnedNoRows, y.unwrap_err());
+        db.execute_batch("INSERT INTO foo VALUES(1, 3);")?;
+        let y: Result<i64> = stmt.query_one([1i32], |r| r.get(0));
+        assert_eq!(3i64, y?);
+        db.execute_batch("INSERT INTO foo VALUES(1, 3);")?;
+        let y: Result<i64> = stmt.query_one([1i32], |r| r.get(0));
+        assert_eq!(Error::QueryReturnedMoreThanOneRow, y.unwrap_err());
         Ok(())
     }
 
@@ -1307,7 +1350,7 @@ mod test {
         db.execute_batch("CREATE TABLE foo(x TEXT)")?;
         let expected = "テスト";
         db.execute("INSERT INTO foo(x) VALUES (?1)", [&expected])?;
-        let actual: String = db.one_column("SELECT x FROM foo")?;
+        let actual: String = db.one_column("SELECT x FROM foo", [])?;
         assert_eq!(expected, actual);
         Ok(())
     }
@@ -1316,7 +1359,7 @@ mod test {
     fn test_nul_byte() -> Result<()> {
         let db = Connection::open_in_memory()?;
         let expected = "a\x00b";
-        let actual: String = db.query_row("SELECT ?1", [expected], |row| row.get(0))?;
+        let actual: String = db.one_column("SELECT ?1", [expected])?;
         assert_eq!(expected, actual);
         Ok(())
     }

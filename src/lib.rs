@@ -665,10 +665,37 @@ impl Connection {
         stmt.query_row(params, f)
     }
 
+    /// Convenience method to execute a query that is expected to return exactly
+    /// one row.
+    ///
+    /// Returns `Err(QueryReturnedMoreThanOneRow)` if the query returns more than one row.
+    ///
+    /// Returns `Err(QueryReturnedNoRows)` if no results are returned. If the
+    /// query truly is optional, you can call
+    /// [`.optional()`](crate::OptionalExtension::optional) on the result of
+    /// this to get a `Result<Option<T>>` (requires that the trait
+    /// `rusqlite::OptionalExtension` is imported).
+    ///
+    /// # Failure
+    ///
+    /// Will return `Err` if the underlying SQLite call fails.
+    pub fn query_one<T, P, F>(&self, sql: &str, params: P, f: F) -> Result<T>
+    where
+        P: Params,
+        F: FnOnce(&Row<'_>) -> Result<T>,
+    {
+        let mut stmt = self.prepare(sql)?;
+        stmt.query_one(params, f)
+    }
+
     // https://sqlite.org/tclsqlite.html#onecolumn
     #[cfg(test)]
-    pub(crate) fn one_column<T: types::FromSql>(&self, sql: &str) -> Result<T> {
-        self.query_row(sql, [], |r| r.get(0))
+    pub(crate) fn one_column<T, P>(&self, sql: &str, params: P) -> Result<T>
+    where
+        T: types::FromSql,
+        P: Params,
+    {
+        self.query_one(sql, params, |r| r.get(0))
     }
 
     /// Convenience method to execute a query that is expected to return a
@@ -1328,9 +1355,8 @@ mod test {
 
         let path_string = path.to_str().unwrap();
         let db = Connection::open(path_string)?;
-        let the_answer: i64 = db.one_column("SELECT x FROM foo")?;
 
-        assert_eq!(42i64, the_answer);
+        assert_eq!(42, db.one_column::<i64, _>("SELECT x FROM foo", [])?);
         Ok(())
     }
 
@@ -1398,9 +1424,8 @@ mod test {
         }
 
         let db = Connection::open(&db_path)?;
-        let the_answer: i64 = db.one_column("SELECT x FROM foo")?;
 
-        assert_eq!(42i64, the_answer);
+        assert_eq!(42, db.one_column::<i64, _>("SELECT x FROM foo", [])?);
         Ok(())
     }
 
@@ -1485,7 +1510,7 @@ mod test {
         assert_eq!(1, db.execute("INSERT INTO foo(x) VALUES (?1)", [1i32])?);
         assert_eq!(1, db.execute("INSERT INTO foo(x) VALUES (?1)", [2i32])?);
 
-        assert_eq!(3i32, db.one_column::<i32>("SELECT SUM(x) FROM foo")?);
+        assert_eq!(3, db.one_column::<i32, _>("SELECT SUM(x) FROM foo", [])?);
         Ok(())
     }
 
@@ -1627,9 +1652,9 @@ mod test {
                    END;";
         db.execute_batch(sql)?;
 
-        assert_eq!(10i64, db.one_column::<i64>("SELECT SUM(x) FROM foo")?);
+        assert_eq!(10, db.one_column::<i64, _>("SELECT SUM(x) FROM foo", [])?);
 
-        let result: Result<i64> = db.one_column("SELECT x FROM foo WHERE x > 5");
+        let result: Result<i64> = db.one_column("SELECT x FROM foo WHERE x > 5", []);
         match result.unwrap_err() {
             Error::QueryReturnedNoRows => (),
             err => panic!("Unexpected error {err}"),
@@ -1648,21 +1673,21 @@ mod test {
     fn test_optional() -> Result<()> {
         let db = Connection::open_in_memory()?;
 
-        let result: Result<i64> = db.one_column("SELECT 1 WHERE 0 <> 0");
+        let result: Result<i64> = db.one_column("SELECT 1 WHERE 0 <> 0", []);
         let result = result.optional();
         match result? {
             None => (),
             _ => panic!("Unexpected result"),
         }
 
-        let result: Result<i64> = db.one_column("SELECT 1 WHERE 0 == 0");
+        let result: Result<i64> = db.one_column("SELECT 1 WHERE 0 == 0", []);
         let result = result.optional();
         match result? {
             Some(1) => (),
             _ => panic!("Unexpected result"),
         }
 
-        let bad_query_result: Result<i64> = db.one_column("NOT A PROPER QUERY");
+        let bad_query_result: Result<i64> = db.one_column("NOT A PROPER QUERY", []);
         let bad_query_result = bad_query_result.optional();
         bad_query_result.unwrap_err();
         Ok(())
@@ -1671,8 +1696,11 @@ mod test {
     #[test]
     fn test_pragma_query_row() -> Result<()> {
         let db = Connection::open_in_memory()?;
-        assert_eq!("memory", db.one_column::<String>("PRAGMA journal_mode")?);
-        let mode = db.one_column::<String>("PRAGMA journal_mode=off")?;
+        assert_eq!(
+            "memory",
+            db.one_column::<String, _>("PRAGMA journal_mode", [])?
+        );
+        let mode = db.one_column::<String, _>("PRAGMA journal_mode=off", [])?;
         if cfg!(feature = "bundled") {
             assert_eq!(mode, "off");
         } else {
@@ -2203,7 +2231,8 @@ mod test {
     fn test_returning() -> Result<()> {
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(x INTEGER PRIMARY KEY)")?;
-        let row_id = db.one_column::<i64>("INSERT INTO foo DEFAULT VALUES RETURNING ROWID")?;
+        let row_id =
+            db.one_column::<i64, _>("INSERT INTO foo DEFAULT VALUES RETURNING ROWID", [])?;
         assert_eq!(row_id, 1);
         Ok(())
     }
