@@ -545,12 +545,27 @@ impl IndexInfo {
         Ok(Some(unsafe { ValueRef::from_value(p_value) }))
     }
 
-    /*/// Identify and handle IN constraints
+    /// Identify IN constraints
     #[cfg(feature = "modern_sqlite")] // SQLite >= 3.38.0
-    pub fn set_in_constraint(&mut self, constraint_idx: c_int, b_handle: c_int) -> bool {
-        unsafe { ffi::sqlite3_vtab_in(self.0, constraint_idx, b_handle) != 0 }
-    } // TODO sqlite3_vtab_in_first / sqlite3_vtab_in_next https://sqlite.org/c3ref/vtab_in_first.html
-    */
+    pub fn is_in_constraint(&self, constraint_idx: usize) -> Result<bool> {
+        self.check_constraint_index(constraint_idx)?;
+        let idx = constraint_idx as c_int;
+        Ok(unsafe { ffi::sqlite3_vtab_in(self.0, idx, -1) != 0 })
+    }
+    /// Handle IN constraints
+    #[cfg(feature = "modern_sqlite")] // SQLite >= 3.38.0
+    pub fn set_in_constraint(&mut self, constraint_idx: usize, filter_all: bool) -> Result<bool> {
+        self.check_constraint_index(constraint_idx)?;
+        let idx = constraint_idx as c_int;
+        Ok(unsafe { ffi::sqlite3_vtab_in(self.0, idx, filter_all as c_int) != 0 })
+    }
+
+    fn check_constraint_index(&self, idx: usize) -> Result<()> {
+        if idx >= unsafe { (*self.0).nConstraint } as usize {
+            return Err(err!(ffi::SQLITE_MISUSE, "{idx} is out of range"));
+        }
+        Ok(())
+    }
 }
 
 /// Determine if a virtual table query is DISTINCT
@@ -749,19 +764,88 @@ impl Context {
     pub fn no_change(&self) -> bool {
         unsafe { ffi::sqlite3_vtab_nochange(self.0) != 0 }
     }
+
+    /// Get the db connection handle via [sqlite3_context_db_handle](https://www.sqlite.org/c3ref/context_db_handle.html)
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because improper use may impact the Connection.
+    pub unsafe fn get_connection(&self) -> Result<ConnectionRef<'_>> {
+        let handle = ffi::sqlite3_context_db_handle(self.0);
+        Ok(ConnectionRef {
+            conn: Connection::from_handle(handle)?,
+            phantom: PhantomData,
+        })
+    }
+}
+
+/// A reference to a connection handle with a lifetime bound to context.
+pub struct ConnectionRef<'ctx> {
+    // comes from Connection::from_handle(sqlite3_context_db_handle(...))
+    // and is non-owning
+    conn: Connection,
+    phantom: PhantomData<&'ctx Context>,
+}
+
+impl Deref for ConnectionRef<'_> {
+    type Target = Connection;
+
+    #[inline]
+    fn deref(&self) -> &Connection {
+        &self.conn
+    }
 }
 
 /// Wrapper to [`VTabCursor::filter`] arguments, the values
 /// requested by [`VTab::best_index`].
 pub struct Filters<'a> {
     values: Values<'a>,
-    // TODO sqlite3_vtab_in_first / sqlite3_vtab_in_next https://sqlite.org/c3ref/vtab_in_first.html & 3.38.0
 }
 impl<'a> Deref for Filters<'a> {
     type Target = Values<'a>;
 
     fn deref(&self) -> &Self::Target {
         &self.values
+    }
+}
+#[cfg(feature = "modern_sqlite")] // SQLite >= 3.38.0
+impl<'a> Filters<'a> {
+    /// Find all elements on the right-hand side of an IN constraint
+    pub fn in_values(&self, idx: usize) -> Result<InValues<'_>> {
+        let list = self.args[idx];
+        Ok(InValues {
+            list,
+            phantom: PhantomData,
+            first: true,
+        })
+    }
+}
+
+/// IN values
+pub struct InValues<'a> {
+    list: *mut ffi::sqlite3_value,
+    phantom: PhantomData<Filters<'a>>,
+    first: bool,
+}
+impl<'a> fallible_iterator::FallibleIterator for InValues<'a> {
+    type Error = Error;
+    type Item = ValueRef<'a>;
+
+    fn next(&mut self) -> Result<Option<Self::Item>> {
+        let mut val: *mut ffi::sqlite3_value = ptr::null_mut();
+        let rc = unsafe {
+            if self.first {
+                self.first = false;
+                ffi::sqlite3_vtab_in_first(self.list, &mut val)
+            } else {
+                ffi::sqlite3_vtab_in_next(self.list, &mut val)
+            }
+        };
+        match rc {
+            ffi::SQLITE_OK => Ok(Some(unsafe { ValueRef::from_value(val) })),
+            ffi::SQLITE_DONE => Ok(None),
+            _ => Err(error_from_sqlite_code(rc, None)),
+        }
     }
 }
 
