@@ -105,16 +105,17 @@ const ZERO_MODULE: ffi::sqlite3_module = unsafe {
 };
 
 macro_rules! module {
-    ($lt:lifetime, $vt:ty, $ct:ty, $xc:expr, $xd:expr, $xu:expr) => {
+    ($lt:lifetime, $vt:ty, $ct:ty, $xcreate:expr, $xdestroy:expr, $xupdate:expr,
+         $xbegin:expr, $xsync:expr, $xcommit:expr, $xrollback:expr) => {
     &Module {
         base: ffi::sqlite3_module {
-            // We don't use V3
-            iVersion: 2,
-            xCreate: $xc,
+            // We don't use methods provided by versions > 1
+            iVersion: 1,
+            xCreate: $xcreate,
             xConnect: Some(rust_connect::<$vt>),
             xBestIndex: Some(rust_best_index::<$vt>),
             xDisconnect: Some(rust_disconnect::<$vt>),
-            xDestroy: $xd,
+            xDestroy: $xdestroy,
             xOpen: Some(rust_open::<$vt>),
             xClose: Some(rust_close::<$ct>),
             xFilter: Some(rust_filter::<$ct>),
@@ -122,16 +123,13 @@ macro_rules! module {
             xEof: Some(rust_eof::<$ct>),
             xColumn: Some(rust_column::<$ct>),
             xRowid: Some(rust_rowid::<$ct>), // FIXME optional
-            xUpdate: $xu,
-            xBegin: None,
-            xSync: None,
-            xCommit: None,
-            xRollback: None,
+            xUpdate: $xupdate,
+            xBegin: $xbegin,
+            xSync: $xsync,
+            xCommit: $xcommit,
+            xRollback: $xrollback,
             xFindFunction: None,
             xRename: None,
-            xSavepoint: None,
-            xRelease: None,
-            xRollbackTo: None,
             ..ZERO_MODULE
         },
         phantom: PhantomData::<&$lt $vt>,
@@ -146,13 +144,31 @@ macro_rules! module {
 pub fn update_module<'vtab, T: UpdateVTab<'vtab>>() -> &'static Module<'vtab, T> {
     match T::KIND {
         VTabKind::EponymousOnly => {
-            module!('vtab, T, T::Cursor, None, None, Some(rust_update::<T>))
+            module!('vtab, T, T::Cursor, None, None, Some(rust_update::<T>), None, None, None, None)
         }
         VTabKind::Eponymous => {
-            module!('vtab, T, T::Cursor, Some(rust_connect::<T>), Some(rust_disconnect::<T>), Some(rust_update::<T>))
+            module!('vtab, T, T::Cursor, Some(rust_connect::<T>), Some(rust_disconnect::<T>), Some(rust_update::<T>), None, None, None, None)
         }
         _ => {
-            module!('vtab, T, T::Cursor, Some(rust_create::<T>), Some(rust_destroy::<T>), Some(rust_update::<T>))
+            module!('vtab, T, T::Cursor, Some(rust_create::<T>), Some(rust_destroy::<T>), Some(rust_update::<T>), None, None, None, None)
+        }
+    }
+}
+
+/// Create a modifiable virtual table implementation with support for transactions.
+///
+/// Step 2 of [Creating New Virtual Table Implementations](https://sqlite.org/vtab.html#creating_new_virtual_table_implementations).
+#[must_use]
+pub fn update_module_with_tx<'vtab, T: TransactionVTab<'vtab>>() -> &'static Module<'vtab, T> {
+    match T::KIND {
+        VTabKind::EponymousOnly => {
+            module!('vtab, T, T::Cursor, None, None, Some(rust_update::<T>), Some(rust_begin::<T>), Some(rust_sync::<T>), Some(rust_commit::<T>), Some(rust_rollback::<T>))
+        }
+        VTabKind::Eponymous => {
+            module!('vtab, T, T::Cursor, Some(rust_connect::<T>), Some(rust_disconnect::<T>), Some(rust_update::<T>), Some(rust_begin::<T>), Some(rust_sync::<T>), Some(rust_commit::<T>), Some(rust_rollback::<T>))
+        }
+        _ => {
+            module!('vtab, T, T::Cursor, Some(rust_create::<T>), Some(rust_destroy::<T>), Some(rust_update::<T>), Some(rust_begin::<T>), Some(rust_sync::<T>), Some(rust_commit::<T>), Some(rust_rollback::<T>))
         }
     }
 }
@@ -167,12 +183,12 @@ pub fn read_only_module<'vtab, T: CreateVTab<'vtab>>() -> &'static Module<'vtab,
         VTabKind::Eponymous => {
             // A virtual table is eponymous if its xCreate method is the exact same function
             // as the xConnect method
-            module!('vtab, T, T::Cursor, Some(rust_connect::<T>), Some(rust_disconnect::<T>), None)
+            module!('vtab, T, T::Cursor, Some(rust_connect::<T>), Some(rust_disconnect::<T>), None, None, None, None, None)
         }
         _ => {
             // The xConnect and xCreate methods may do the same thing, but they must be
             // different so that the virtual table is not an eponymous virtual table.
-            module!('vtab, T, T::Cursor, Some(rust_create::<T>), Some(rust_destroy::<T>), None)
+            module!('vtab, T, T::Cursor, Some(rust_create::<T>), Some(rust_destroy::<T>), None, None, None, None, None)
         }
     }
 }
@@ -183,7 +199,7 @@ pub fn read_only_module<'vtab, T: CreateVTab<'vtab>>() -> &'static Module<'vtab,
 #[must_use]
 pub fn eponymous_only_module<'vtab, T: VTab<'vtab>>() -> &'static Module<'vtab, T> {
     //  For eponymous-only virtual tables, the xCreate method is NULL
-    module!('vtab, T, T::Cursor, None, None, None)
+    module!('vtab, T, T::Cursor, None, None, None, None, None, None, None)
 }
 
 /// Virtual table configuration options
@@ -317,6 +333,28 @@ pub trait UpdateVTab<'vtab>: CreateVTab<'vtab> {
     /// Update: `args[0] != NULL: old rowid or PK, args[1]: new row id or PK,
     /// args[2]: ...`
     fn update(&mut self, args: &Updates<'_>) -> Result<()>;
+}
+
+/// Writable virtual table instance with transaction support trait.
+///
+/// See [SQLite doc](https://sqlite.org/vtab.html#the_xbegin_method)
+pub trait TransactionVTab<'vtab>: UpdateVTab<'vtab> {
+    /// Start a new transaction
+    fn begin(&mut self) -> Result<()> {
+        Ok(())
+    }
+    /// Begin two-phase commit
+    fn sync(&mut self) -> Result<()> {
+        Ok(())
+    }
+    /// Commit the current transaction
+    fn commit(&mut self) -> Result<()> {
+        Ok(())
+    }
+    /// Abandon the current transaction
+    fn rollback(&mut self) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// Index constraint operator.
@@ -560,6 +598,7 @@ impl IndexInfo {
         Ok(unsafe { ffi::sqlite3_vtab_in(self.0, idx, filter_all as c_int) != 0 })
     }
 
+    #[cfg(feature = "modern_sqlite")] // SQLite >= 3.38.0
     fn check_constraint_index(&self, idx: usize) -> Result<()> {
         if idx >= unsafe { (*self.0).nConstraint } as usize {
             return Err(err!(ffi::SQLITE_MISUSE, "{idx} is out of range"));
@@ -821,11 +860,13 @@ impl<'a> Filters<'a> {
 }
 
 /// IN values
+#[cfg(feature = "modern_sqlite")] // SQLite >= 3.38.0
 pub struct InValues<'a> {
     list: *mut ffi::sqlite3_value,
     phantom: PhantomData<Filters<'a>>,
     first: bool,
 }
+#[cfg(feature = "modern_sqlite")] // SQLite >= 3.38.0
 impl<'a> fallible_iterator::FallibleIterator for InValues<'a> {
     type Error = Error;
     type Item = ValueRef<'a>;
@@ -1234,19 +1275,7 @@ where
 {
     let vt = vtab.cast::<T>();
     let mut idx_info = IndexInfo(info);
-    match (*vt).best_index(&mut idx_info) {
-        Ok(_) => ffi::SQLITE_OK,
-        Err(Error::SqliteFailure(err, s)) => {
-            if let Some(err_msg) = s {
-                set_err_msg(vtab, &err_msg);
-            }
-            err.extended_code
-        }
-        Err(err) => {
-            set_err_msg(vtab, &err.to_string());
-            ffi::SQLITE_ERROR
-        }
-    }
+    vtab_error(vtab, (*vt).best_index(&mut idx_info))
 }
 
 unsafe extern "C" fn rust_disconnect<'vtab, T>(vtab: *mut sqlite3_vtab) -> c_int
@@ -1274,16 +1303,7 @@ where
             drop(Box::from_raw(vt));
             ffi::SQLITE_OK
         }
-        Err(Error::SqliteFailure(err, s)) => {
-            if let Some(err_msg) = s {
-                set_err_msg(vtab, &err_msg);
-            }
-            err.extended_code
-        }
-        Err(err) => {
-            set_err_msg(vtab, &err.to_string());
-            ffi::SQLITE_ERROR
-        }
+        err => vtab_error(vtab, err),
     }
 }
 
@@ -1301,16 +1321,7 @@ where
             *pp_cursor = boxed_cursor.cast::<sqlite3_vtab_cursor>();
             ffi::SQLITE_OK
         }
-        Err(Error::SqliteFailure(err, s)) => {
-            if let Some(err_msg) = s {
-                set_err_msg(vtab, &err_msg);
-            }
-            err.extended_code
-        }
-        Err(err) => {
-            set_err_msg(vtab, &err.to_string());
-            ffi::SQLITE_ERROR
-        }
+        err => vtab_error(vtab, err),
     }
 }
 
@@ -1420,7 +1431,48 @@ where
         let values = Values { args };
         (*vt).update(&Updates { values })
     };
-    match r {
+    vtab_error(vtab, r)
+}
+
+unsafe extern "C" fn rust_begin<'vtab, T>(vtab: *mut sqlite3_vtab) -> c_int
+where
+    T: TransactionVTab<'vtab>,
+{
+    let vt = vtab.cast::<T>();
+    vtab_error(vtab, (*vt).begin())
+}
+unsafe extern "C" fn rust_sync<'vtab, T>(vtab: *mut sqlite3_vtab) -> c_int
+where
+    T: TransactionVTab<'vtab>,
+{
+    let vt = vtab.cast::<T>();
+    vtab_error(vtab, (*vt).sync())
+}
+unsafe extern "C" fn rust_commit<'vtab, T>(vtab: *mut sqlite3_vtab) -> c_int
+where
+    T: TransactionVTab<'vtab>,
+{
+    let vt = vtab.cast::<T>();
+    vtab_error(vtab, (*vt).commit())
+}
+unsafe extern "C" fn rust_rollback<'vtab, T>(vtab: *mut sqlite3_vtab) -> c_int
+where
+    T: TransactionVTab<'vtab>,
+{
+    let vt = vtab.cast::<T>();
+    vtab_error(vtab, (*vt).rollback())
+}
+
+/// Virtual table cursors can set an error message by assigning a string to
+/// `zErrMsg`.
+unsafe fn cursor_error<T>(cursor: *mut sqlite3_vtab_cursor, result: Result<T>) -> c_int {
+    vtab_error((*cursor).pVtab, result)
+}
+
+/// Virtual tables can set an error message by assigning a string to
+/// `zErrMsg`.
+unsafe fn vtab_error<T>(vtab: *mut sqlite3_vtab, result: Result<T>) -> c_int {
+    match result {
         Ok(_) => ffi::SQLITE_OK,
         Err(Error::SqliteFailure(err, s)) => {
             if let Some(err_msg) = s {
@@ -1430,25 +1482,6 @@ where
         }
         Err(err) => {
             set_err_msg(vtab, &err.to_string());
-            ffi::SQLITE_ERROR
-        }
-    }
-}
-
-/// Virtual table cursors can set an error message by assigning a string to
-/// `zErrMsg`.
-#[cold]
-unsafe fn cursor_error<T>(cursor: *mut sqlite3_vtab_cursor, result: Result<T>) -> c_int {
-    match result {
-        Ok(_) => ffi::SQLITE_OK,
-        Err(Error::SqliteFailure(err, s)) => {
-            if let Some(err_msg) = s {
-                set_err_msg((*cursor).pVtab, &err_msg);
-            }
-            err.extended_code
-        }
-        Err(err) => {
-            set_err_msg((*cursor).pVtab, &err.to_string());
             ffi::SQLITE_ERROR
         }
     }
