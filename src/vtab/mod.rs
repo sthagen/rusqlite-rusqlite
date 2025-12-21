@@ -16,7 +16,7 @@ use std::ops::Deref;
 use std::ptr;
 use std::slice;
 
-use libsqlite3_sys::sqlite3_free;
+use crate::ffi::sqlite3_free;
 
 use crate::context::set_result;
 use crate::error::{check, error_from_sqlite_code, to_sqlite_error};
@@ -85,9 +85,6 @@ pub struct Module<'vtab, T: VTab<'vtab>> {
     base: ffi::sqlite3_module,
     phantom: PhantomData<&'vtab T>,
 }
-
-unsafe impl<'vtab, T: VTab<'vtab>> Send for Module<'vtab, T> {}
-unsafe impl<'vtab, T: VTab<'vtab>> Sync for Module<'vtab, T> {}
 
 union ModuleZeroHack {
     bytes: [u8; size_of::<ffi::sqlite3_module>()],
@@ -263,7 +260,7 @@ impl VTabConnection {
 /// (See [SQLite doc](https://sqlite.org/c3ref/vtab.html))
 pub unsafe trait VTab<'vtab>: Sized {
     /// Client data passed to [`Connection::create_module`].
-    type Aux;
+    type Aux: Send + Sync + 'static;
     /// Specific cursor implementation
     type Cursor: VTabCursor;
 
@@ -546,7 +543,6 @@ impl IndexInfo {
     }
 
     /// Determine the collation for a virtual table constraint
-    #[cfg(feature = "modern_sqlite")] // SQLite >= 3.22.0
     pub fn collation(&self, constraint_idx: usize) -> Result<&str> {
         let idx = constraint_idx as c_int;
         let collation = unsafe { ffi::sqlite3_vtab_collation(self.0, idx) };
@@ -1023,7 +1019,6 @@ impl Updates<'_> {
     /// - and if and the prior [`VTabCursor::column`] method call that was invoked to extracted the value for that column returned without setting a result.
     #[inline]
     #[must_use]
-    #[cfg(feature = "modern_sqlite")] // SQLite >= 3.22.0
     pub fn no_change(&self, idx: usize) -> bool {
         unsafe { ffi::sqlite3_value_nochange(self.values.args[idx]) != 0 }
     }
@@ -1541,6 +1536,9 @@ mod vtablog;
 
 #[cfg(test)]
 mod test {
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
+
     #[test]
     fn test_dequote() {
         assert_eq!("", super::dequote(""));
