@@ -70,7 +70,7 @@ impl Sql {
             _ => {
                 return Err(err!(ffi::SQLITE_MISUSE, "Unsupported value \"{value:?}\""));
             }
-        };
+        }
         Ok(())
     }
 

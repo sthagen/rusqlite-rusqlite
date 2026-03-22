@@ -424,7 +424,7 @@ mod test {
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     use crate::{Connection, Result, MAIN_DB};
-    use std::io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
+    use std::io::{BufRead as _, BufReader, BufWriter, Read as _, Seek as _, SeekFrom, Write as _};
 
     fn db_with_test_blob() -> Result<(Connection, i64)> {
         let db = Connection::open_in_memory()?;
@@ -556,7 +556,7 @@ mod test {
 
     #[test]
     fn zero_blob() -> Result<()> {
-        use crate::types::ToSql;
+        use crate::types::ToSql as _;
         let zb = super::ZeroBlob(1);
         assert!(zb.to_sql().is_ok());
         Ok(())
