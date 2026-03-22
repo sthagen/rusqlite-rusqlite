@@ -240,3 +240,12 @@ rustdoc-args = ["--cfg", "docsrs"]
 [package.metadata.playground]
 features = ["bundled-full"]
 all-features = false
+
+[workspace.lints.clippy]
+ref_option = "warn"
+semicolon_if_nothing_returned = "warn"
+unnecessary_semicolon = "warn"
+unused_trait_names = "warn"
+
+[lints]
+workspace = true

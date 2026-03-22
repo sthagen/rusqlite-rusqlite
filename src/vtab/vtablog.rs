@@ -1,10 +1,10 @@
 //! Port of C [vtablog](http://www.sqlite.org/cgi/src/finfo?name=ext/misc/vtablog.c)
 use std::ffi::c_int;
 use std::marker::PhantomData;
-use std::str::FromStr;
+use std::str::FromStr as _;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use fallible_iterator::FallibleIterator;
+use fallible_iterator::FallibleIterator as _;
 
 use crate::types::Type;
 use crate::vtab::{
@@ -63,7 +63,7 @@ impl VTabLog {
                             "more than one '{param}' parameter"
                         )));
                     }
-                    schema = Some(value.to_owned())
+                    schema = Some(value.to_owned());
                 }
                 "rows" => {
                     if n_row.is_some() {
@@ -72,7 +72,7 @@ impl VTabLog {
                         )));
                     }
                     if let Ok(n) = i64::from_str(value) {
-                        n_row = Some(n)
+                        n_row = Some(n);
                     }
                 }
                 _ => {
@@ -333,7 +333,7 @@ unsafe impl VTabCursor for VTabLogCursor<'_> {
         if i == 0 {
             println!("  db busy: {:?}", unsafe {
                 ctx.get_connection().map(|c| c.is_busy())
-            })
+            });
         }
         ctx.set_result(&value)
     }

@@ -223,7 +223,7 @@ unsafe impl VTabCursor for SeriesTabCursor<'_> {
             }
         } else {
             self.step = 1;
-        };
+        }
         for arg in args.iter() {
             if arg.data_type() == Type::Null {
                 // If any of the constraints have a NULL value, then return no rows.
@@ -286,7 +286,7 @@ mod test {
     use crate::ffi;
     use crate::vtab::series;
     use crate::{Connection, Result};
-    use fallible_iterator::FallibleIterator;
+    use fallible_iterator::FallibleIterator as _;
 
     #[test]
     fn test_series_module() -> Result<()> {

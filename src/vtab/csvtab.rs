@@ -347,7 +347,7 @@ mod test {
 
     use crate::vtab::csvtab;
     use crate::{Connection, Result};
-    use fallible_iterator::FallibleIterator;
+    use fallible_iterator::FallibleIterator as _;
 
     #[cfg_attr(
         all(target_family = "wasm", target_os = "unknown"),
