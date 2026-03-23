@@ -571,7 +571,7 @@ mod test {
         {
             let mut tx = db.transaction()?;
             tx.execute_batch("INSERT INTO foo VALUES(2)")?;
-            tx.set_drop_behavior(DropBehavior::Commit)
+            tx.set_drop_behavior(DropBehavior::Commit);
         }
         {
             let tx = db.transaction()?;

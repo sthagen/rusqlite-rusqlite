@@ -1515,7 +1515,7 @@ unsafe fn result_error<T>(ctx: *mut ffi::sqlite3_context, result: Result<T>) -> 
                         ffi::sqlite3_result_error(ctx, cstr.as_ptr(), -1);
                     }
                 }
-            };
+            }
             err.extended_code
         }
         Err(err) => {

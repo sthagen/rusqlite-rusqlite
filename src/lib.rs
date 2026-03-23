@@ -329,7 +329,7 @@ fn str_for_sqlite(
 
 #[cfg(unix)]
 fn path_to_cstring(p: &Path) -> Result<CString> {
-    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::ffi::OsStrExt as _;
     Ok(CString::new(p.as_os_str().as_bytes())?)
 }
 
@@ -1293,7 +1293,7 @@ mod test {
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     use super::*;
-    use fallible_iterator::FallibleIterator;
+    use fallible_iterator::FallibleIterator as _;
     use std::error::Error as StdError;
     use std::fmt;
 
@@ -1437,7 +1437,7 @@ mod test {
     fn test_invalid_unicode_file_names() -> Result<()> {
         use std::ffi::OsStr;
         use std::fs::File;
-        use std::os::unix::ffi::OsStrExt;
+        use std::os::unix::ffi::OsStrExt as _;
         let temp_dir = tempfile::tempdir().unwrap();
 
         let path = temp_dir.path();

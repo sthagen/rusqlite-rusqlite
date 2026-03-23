@@ -181,7 +181,7 @@ mod test {
 
     use super::StatementCache;
     use crate::{Connection, Result};
-    use fallible_iterator::FallibleIterator;
+    use fallible_iterator::FallibleIterator as _;
 
     impl StatementCache {
         fn clear(&self) {
