@@ -101,102 +101,113 @@ const ZERO_MODULE: ffi::sqlite3_module = unsafe {
     .module
 };
 
-macro_rules! module {
-    ($lt:lifetime, $vt:ty, $ct:ty, $xcreate:expr, $xdestroy:expr, $xupdate:expr,
-         $xbegin:expr, $xsync:expr, $xcommit:expr, $xrollback:expr) => {
-    &Module {
-        base: ffi::sqlite3_module {
-            // We don't use methods provided by versions > 1
-            iVersion: 1,
-            xCreate: $xcreate,
-            xConnect: Some(rust_connect::<$vt>),
-            xBestIndex: Some(rust_best_index::<$vt>),
-            xDisconnect: Some(rust_disconnect::<$vt>),
-            xDestroy: $xdestroy,
-            xOpen: Some(rust_open::<$vt>),
-            xClose: Some(rust_close::<$ct>),
-            xFilter: Some(rust_filter::<$ct>),
-            xNext: Some(rust_next::<$ct>),
-            xEof: Some(rust_eof::<$ct>),
-            xColumn: Some(rust_column::<$ct>),
-            xRowid: Some(rust_rowid::<$ct>), // FIXME optional
-            xUpdate: $xupdate,
-            xBegin: $xbegin,
-            xSync: $xsync,
-            xCommit: $xcommit,
-            xRollback: $xrollback,
-            xFindFunction: None,
-            xRename: None,
-            ..ZERO_MODULE
-        },
-        phantom: PhantomData::<&$lt $vt>,
-    }
-    };
-}
-
-/// Create a modifiable virtual table implementation.
-///
-/// Step 2 of [Creating New Virtual Table Implementations](https://sqlite.org/vtab.html#creating_new_virtual_table_implementations).
-#[must_use]
-pub fn update_module<'vtab, T: UpdateVTab<'vtab>>() -> &'static Module<'vtab, T> {
-    match T::KIND {
-        VTabKind::EponymousOnly => {
-            module!('vtab, T, T::Cursor, None, None, Some(rust_update::<T>), None, None, None, None)
-        }
-        VTabKind::Eponymous => {
-            module!('vtab, T, T::Cursor, Some(rust_connect::<T>), Some(rust_disconnect::<T>), Some(rust_update::<T>), None, None, None, None)
-        }
-        _ => {
-            module!('vtab, T, T::Cursor, Some(rust_create::<T>), Some(rust_destroy::<T>), Some(rust_update::<T>), None, None, None, None)
+impl<'vtab, T: VTab<'vtab>> Module<'vtab, T> {
+    /// Create an eponymous only virtual table implementation.
+    ///
+    /// Step 2 of [Creating New Virtual Table Implementations](https://sqlite.org/vtab.html#creating_new_virtual_table_implementations).
+    #[must_use]
+    pub const fn eponymous_only_module() -> Self {
+        //  For eponymous-only virtual tables, the xCreate method is NULL
+        Module {
+            base: ffi::sqlite3_module {
+                // We don't use methods provided by versions > 1
+                iVersion: 1,
+                xCreate: None,
+                xConnect: Some(rust_connect::<T>),
+                xBestIndex: Some(rust_best_index::<T>),
+                xDisconnect: Some(rust_disconnect::<T>),
+                xDestroy: None,
+                xOpen: Some(rust_open::<T>),
+                xClose: Some(rust_close::<T::Cursor>),
+                xFilter: Some(rust_filter::<T::Cursor>),
+                xNext: Some(rust_next::<T::Cursor>),
+                xEof: Some(rust_eof::<T::Cursor>),
+                xColumn: Some(rust_column::<T::Cursor>),
+                xRowid: Some(rust_rowid::<T::Cursor>),
+                xUpdate: None,
+                xBegin: None,
+                xSync: None,
+                xCommit: None,
+                xRollback: None,
+                xFindFunction: None,
+                xRename: None,
+                ..ZERO_MODULE
+            },
+            phantom: PhantomData::<&'vtab T>,
         }
     }
-}
 
-/// Create a modifiable virtual table implementation with support for transactions.
-///
-/// Step 2 of [Creating New Virtual Table Implementations](https://sqlite.org/vtab.html#creating_new_virtual_table_implementations).
-#[must_use]
-pub fn update_module_with_tx<'vtab, T: TransactionVTab<'vtab>>() -> &'static Module<'vtab, T> {
-    match T::KIND {
-        VTabKind::EponymousOnly => {
-            module!('vtab, T, T::Cursor, None, None, Some(rust_update::<T>), Some(rust_begin::<T>), Some(rust_sync::<T>), Some(rust_commit::<T>), Some(rust_rollback::<T>))
-        }
-        VTabKind::Eponymous => {
-            module!('vtab, T, T::Cursor, Some(rust_connect::<T>), Some(rust_disconnect::<T>), Some(rust_update::<T>), Some(rust_begin::<T>), Some(rust_sync::<T>), Some(rust_commit::<T>), Some(rust_rollback::<T>))
-        }
-        _ => {
-            module!('vtab, T, T::Cursor, Some(rust_create::<T>), Some(rust_destroy::<T>), Some(rust_update::<T>), Some(rust_begin::<T>), Some(rust_sync::<T>), Some(rust_commit::<T>), Some(rust_rollback::<T>))
+    /// Create a read-only virtual table implementation.
+    ///
+    /// Step 2 of [Creating New Virtual Table Implementations](https://sqlite.org/vtab.html#creating_new_virtual_table_implementations).
+    #[must_use]
+    pub const fn read_only_module() -> Self
+    where
+        T: CreateVTab<'vtab>,
+    {
+        let mut module = Self::eponymous_only_module();
+        match T::KIND {
+            VTabKind::EponymousOnly => module,
+            VTabKind::Eponymous => {
+                // A virtual table is eponymous if its xCreate method is the exact same function
+                // as the xConnect method
+                module.base.xCreate = module.base.xConnect;
+                module.base.xDestroy = module.base.xDisconnect;
+                module
+            }
+            _ => {
+                // The xConnect and xCreate methods may do the same thing, but they must be
+                // different so that the virtual table is not an eponymous virtual table.
+                module.base.xCreate = Some(rust_create::<T>);
+                module.base.xDestroy = Some(rust_destroy::<T>);
+                module
+            }
         }
     }
-}
 
-/// Create a read-only virtual table implementation.
-///
-/// Step 2 of [Creating New Virtual Table Implementations](https://sqlite.org/vtab.html#creating_new_virtual_table_implementations).
-#[must_use]
-pub fn read_only_module<'vtab, T: CreateVTab<'vtab>>() -> &'static Module<'vtab, T> {
-    match T::KIND {
-        VTabKind::EponymousOnly => eponymous_only_module(),
-        VTabKind::Eponymous => {
-            // A virtual table is eponymous if its xCreate method is the exact same function
-            // as the xConnect method
-            module!('vtab, T, T::Cursor, Some(rust_connect::<T>), Some(rust_disconnect::<T>), None, None, None, None, None)
-        }
-        _ => {
-            // The xConnect and xCreate methods may do the same thing, but they must be
-            // different so that the virtual table is not an eponymous virtual table.
-            module!('vtab, T, T::Cursor, Some(rust_create::<T>), Some(rust_destroy::<T>), None, None, None, None, None)
-        }
+    /// Create a modifiable virtual table implementation.
+    ///
+    /// Step 2 of [Creating New Virtual Table Implementations](https://sqlite.org/vtab.html#creating_new_virtual_table_implementations).
+    #[must_use]
+    pub const fn update_module() -> Self
+    where
+        T: UpdateVTab<'vtab>,
+    {
+        let mut module = Self::read_only_module();
+        module.base.xUpdate = Some(rust_update::<T>);
+        module
     }
-}
 
-/// Create an eponymous only virtual table implementation.
-///
-/// Step 2 of [Creating New Virtual Table Implementations](https://sqlite.org/vtab.html#creating_new_virtual_table_implementations).
-#[must_use]
-pub fn eponymous_only_module<'vtab, T: VTab<'vtab>>() -> &'static Module<'vtab, T> {
-    //  For eponymous-only virtual tables, the xCreate method is NULL
-    module!('vtab, T, T::Cursor, None, None, None, None, None, None, None)
+    /// Create a modifiable virtual table implementation with support for transactions.
+    ///
+    /// Step 2 of [Creating New Virtual Table Implementations](https://sqlite.org/vtab.html#creating_new_virtual_table_implementations).
+    #[must_use]
+    pub const fn update_module_with_tx() -> Self
+    where
+        T: TransactionVTab<'vtab>,
+    {
+        let mut module = Self::update_module();
+        module.base.xBegin = Some(rust_begin::<T>);
+        module.base.xSync = Some(rust_sync::<T>);
+        module.base.xCommit = Some(rust_commit::<T>);
+        module.base.xRollback = Some(rust_rollback::<T>);
+        module
+    }
+
+    /// No `xRowid`
+    pub const fn without_rowid(mut self) -> Self {
+        self.base.xRowid = None;
+        self
+    }
+
+    /// No `xSync`
+    pub const fn without_sync(mut self) -> Self
+    where
+        T: TransactionVTab<'vtab>,
+    {
+        self.base.xSync = None;
+        self
+    }
 }
 
 /// Virtual table configuration options

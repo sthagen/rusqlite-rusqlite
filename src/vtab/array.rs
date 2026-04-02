@@ -3,7 +3,7 @@
 //! Note: `rarray`, not `carray` is the name of the table valued function we
 //! define.
 //!
-//! Port of [carray](http://www.sqlite.org/cgi/src/finfo?name=ext/misc/carray.c)
+//! Port of [carray](https://sqlite.org/src/file/ext/misc/carray.c)
 //! C extension: `https://www.sqlite.org/carray.html`
 //!
 //! # Example
@@ -33,8 +33,7 @@ use std::rc::Rc;
 use crate::ffi;
 use crate::types::{ToSql, ToSqlOutput, Value};
 use crate::vtab::{
-    eponymous_only_module, Context, Filters, IndexConstraintOp, IndexInfo, VTab, VTabConnection,
-    VTabCursor,
+    Context, Filters, IndexConstraintOp, IndexInfo, Module, VTab, VTabConnection, VTabCursor,
 };
 use crate::{Connection, Result};
 
@@ -54,8 +53,9 @@ impl ToSql for Array {
 
 /// Register the "rarray" module.
 pub fn load_module(conn: &Connection) -> Result<()> {
+    const MODULE: Module<ArrayTab> = Module::eponymous_only_module();
     let aux: Option<()> = None;
-    conn.create_module(c"rarray", eponymous_only_module::<ArrayTab>(), aux)
+    conn.create_module(c"rarray", &MODULE, aux)
 }
 
 // Column numbers
