@@ -1,6 +1,6 @@
 //! CSV Virtual Table.
 //!
-//! Port of [csv](http://www.sqlite.org/cgi/src/finfo?name=ext/misc/csv.c) C
+//! Port of [csv](https://sqlite.org/src/file/ext/misc/csv.c) C
 //! extension: `https://www.sqlite.org/csv.html`
 //!
 //! # Example
@@ -30,8 +30,8 @@ use std::str;
 use crate::ffi;
 use crate::types::Null;
 use crate::vtab::{
-    escape_double_quote, parse_boolean, read_only_module, Context, CreateVTab, Filters, IndexInfo,
-    VTab, VTabConfig, VTabConnection, VTabCursor, VTabKind,
+    escape_double_quote, parse_boolean, Context, CreateVTab, Filters, IndexInfo, Module, VTab,
+    VTabConfig, VTabConnection, VTabCursor, VTabKind,
 };
 use crate::{Connection, Error, Result};
 
@@ -47,8 +47,9 @@ use crate::{Connection, Error, Result};
 /// );
 /// ```
 pub fn load_module(conn: &Connection) -> Result<()> {
+    const MODULE: Module<CsvTab> = Module::read_only_module();
     let aux: Option<()> = None;
-    conn.create_module(c"csv", read_only_module::<CsvTab>(), aux)
+    conn.create_module(c"csv", &MODULE, aux)
 }
 
 /// An instance of the CSV virtual table

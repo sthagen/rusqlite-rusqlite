@@ -1,7 +1,7 @@
 //! Generate series virtual table.
 //!
 //! Port of C [generate series
-//! "function"](http://www.sqlite.org/cgi/src/finfo?name=ext/misc/series.c):
+//! "function"](https://sqlite.org/src/file/ext/misc/series.c):
 //! `https://www.sqlite.org/series.html`
 use std::ffi::c_int;
 use std::marker::PhantomData;
@@ -9,19 +9,16 @@ use std::marker::PhantomData;
 use crate::ffi;
 use crate::types::Type;
 use crate::vtab::{
-    eponymous_only_module, Context, Filters, IndexConstraintOp, IndexInfo, VTab, VTabConfig,
-    VTabConnection, VTabCursor,
+    Context, Filters, IndexConstraintOp, IndexInfo, Module, VTab, VTabConfig, VTabConnection,
+    VTabCursor,
 };
 use crate::{error::error_from_sqlite_code, Connection, Result};
 
 /// Register the `generate_series` module.
 pub fn load_module(conn: &Connection) -> Result<()> {
+    const MODULE: Module<SeriesTab> = Module::eponymous_only_module();
     let aux: Option<()> = None;
-    conn.create_module(
-        c"generate_series",
-        eponymous_only_module::<SeriesTab>(),
-        aux,
-    )
+    conn.create_module(c"generate_series", &MODULE, aux)
 }
 
 // Column numbers

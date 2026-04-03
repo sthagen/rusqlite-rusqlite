@@ -1,4 +1,4 @@
-//! Port of C [vtablog](http://www.sqlite.org/cgi/src/finfo?name=ext/misc/vtablog.c)
+//! Port of C [vtablog](https://sqlite.org/src/file/ext/misc/vtablog.c)
 use std::ffi::c_int;
 use std::marker::PhantomData;
 use std::str::FromStr as _;
@@ -8,16 +8,17 @@ use fallible_iterator::FallibleIterator as _;
 
 use crate::types::Type;
 use crate::vtab::{
-    update_module_with_tx, Context, CreateVTab, Filters, IndexInfo, Inserts, TransactionVTab,
-    UpdateVTab, Updates, VTab, VTabConnection, VTabCursor, VTabKind,
+    Context, CreateVTab, Filters, IndexInfo, Inserts, Module, TransactionVTab, UpdateVTab, Updates,
+    VTab, VTabConnection, VTabCursor, VTabKind,
 };
 use crate::{ffi, ValueRef};
 use crate::{Connection, Error, Result};
 
 /// Register the "vtablog" module.
 pub fn load_module(conn: &Connection) -> Result<()> {
+    const MODULE: Module<VTabLog> = Module::update_module_with_tx();
     let aux: Option<()> = None;
-    conn.create_module(c"vtablog", update_module_with_tx::<VTabLog>(), aux)
+    conn.create_module(c"vtablog", &MODULE, aux)
 }
 
 /// An instance of the vtablog virtual table
