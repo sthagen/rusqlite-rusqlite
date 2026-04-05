@@ -36,9 +36,9 @@ fn test_dummy_module() -> rusqlite::Result<()> {
             Ok(("CREATE TABLE x(value)".to_owned(), vtab))
         }
 
-        fn best_index(&self, info: &mut IndexInfo) -> Result<()> {
+        fn best_index(&self, info: &mut IndexInfo) -> Result<bool> {
             info.set_estimated_cost(1.);
-            Ok(())
+            Ok(true)
         }
 
         fn open(&'vtab mut self) -> Result<DummyTabCursor<'vtab>> {

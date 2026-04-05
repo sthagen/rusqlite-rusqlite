@@ -84,7 +84,7 @@ unsafe impl<'vtab> VTab<'vtab> for ArrayTab {
         Ok(("CREATE TABLE x(value,pointer hidden)".to_owned(), vtab))
     }
 
-    fn best_index(&self, info: &mut IndexInfo) -> Result<()> {
+    fn best_index(&self, info: &mut IndexInfo) -> Result<bool> {
         // Index of the pointer= constraint
         let mut ptr_idx = false;
         for (constraint, mut constraint_usage) in info.constraints_and_usages() {
@@ -109,7 +109,7 @@ unsafe impl<'vtab> VTab<'vtab> for ArrayTab {
             info.set_estimated_rows(2_147_483_647);
             info.set_idx_num(0);
         }
-        Ok(())
+        Ok(true)
     }
 
     fn open(&mut self) -> Result<ArrayTabCursor<'_>> {

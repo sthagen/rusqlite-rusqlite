@@ -234,9 +234,9 @@ unsafe impl<'vtab> VTab<'vtab> for CsvTab {
     }
 
     // Only a forward full table scan is supported.
-    fn best_index(&self, info: &mut IndexInfo) -> Result<()> {
+    fn best_index(&self, info: &mut IndexInfo) -> Result<bool> {
         info.set_estimated_cost(1_000_000.);
-        Ok(())
+        Ok(true)
     }
 
     fn open(&mut self) -> Result<CsvTabCursor<'_>> {

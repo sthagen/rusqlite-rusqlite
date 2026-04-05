@@ -115,7 +115,7 @@ unsafe impl<'vtab> VTab<'vtab> for VTabLog {
         Self::connect_create(db, aux, args, false)
     }
 
-    fn best_index(&self, info: &mut IndexInfo) -> Result<()> {
+    fn best_index(&self, info: &mut IndexInfo) -> Result<bool> {
         println!(
             "VTabLog::best_index({}, num_of_order_by: {}, col_used: {}, distinct: {:?})",
             self.i_inst,
@@ -146,7 +146,7 @@ unsafe impl<'vtab> VTab<'vtab> for VTabLog {
             info.set_in_constraint(idx, true)?;
             info.constraint_usage(idx).set_argv_index(1);
         }
-        Ok(())
+        Ok(true)
     }
 
     fn open(&'vtab mut self) -> Result<Self::Cursor> {
