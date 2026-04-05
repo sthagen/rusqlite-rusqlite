@@ -12,7 +12,7 @@ use crate::vtab::{
     Context, Filters, IndexConstraintOp, IndexInfo, Module, VTab, VTabConfig, VTabConnection,
     VTabCursor,
 };
-use crate::{error::error_from_sqlite_code, Connection, Result};
+use crate::{Connection, Result};
 
 /// Register the `generate_series` module.
 pub fn load_module(conn: &Connection) -> Result<()> {
@@ -72,7 +72,7 @@ unsafe impl<'vtab> VTab<'vtab> for SeriesTab {
         ))
     }
 
-    fn best_index(&self, info: &mut IndexInfo) -> Result<()> {
+    fn best_index(&self, info: &mut IndexInfo) -> Result<bool> {
         // The query plan bitmask
         let mut idx_num: QueryPlanFlags = QueryPlanFlags::empty();
         // Mask of unusable constraints
@@ -109,7 +109,7 @@ unsafe impl<'vtab> VTab<'vtab> for SeriesTab {
             debug_assert_eq!(Ok("BINARY"), info.collation(*j));
         }
         if !(unusable_mask & !idx_num).is_empty() {
-            return Err(error_from_sqlite_code(ffi::SQLITE_CONSTRAINT, None));
+            return Ok(false);
         }
         if idx_num.contains(QueryPlanFlags::BOTH) {
             // Both start= and stop= boundaries are available.
@@ -149,7 +149,7 @@ unsafe impl<'vtab> VTab<'vtab> for SeriesTab {
             info.set_estimated_rows(2_147_483_647);
         }
         info.set_idx_num(idx_num.bits());
-        Ok(())
+        Ok(true)
     }
 
     fn open(&mut self) -> Result<SeriesTabCursor<'_>> {
