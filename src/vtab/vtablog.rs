@@ -1,5 +1,5 @@
 //! Port of C [vtablog](https://sqlite.org/src/file/ext/misc/vtablog.c)
-use std::ffi::c_int;
+use std::ffi::{c_int, CStr};
 use std::marker::PhantomData;
 use std::str::FromStr as _;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -14,11 +14,13 @@ use crate::vtab::{
 use crate::{ffi, ValueRef};
 use crate::{Connection, Error, Result};
 
+const MODULE_NAME: &CStr = c"vtablog";
+
 /// Register the "vtablog" module.
 pub fn load_module(conn: &Connection) -> Result<()> {
     const MODULE: Module<VTabLog> = Module::update_module_with_tx();
     let aux: Option<()> = None;
-    conn.create_module(c"vtablog", &MODULE, aux)
+    conn.create_module(MODULE_NAME, &MODULE, aux)
 }
 
 /// An instance of the vtablog virtual table
@@ -39,10 +41,13 @@ struct VTabLog {
 impl VTabLog {
     fn connect_create(
         db: &mut VTabConnection,
-        _: Option<&()>,
+        aux: Option<&()>,
         args: &[&[u8]],
         is_create: bool,
     ) -> Result<(String, Self)> {
+        debug_assert_eq!(aux, None);
+        debug_assert_eq!(args[0], MODULE_NAME.to_bytes());
+        debug_assert!(args.len() >= 3);
         static N_INST: AtomicUsize = AtomicUsize::new(1);
         let i_inst = N_INST.fetch_add(1, Ordering::SeqCst);
         println!(
@@ -115,7 +120,7 @@ unsafe impl<'vtab> VTab<'vtab> for VTabLog {
         Self::connect_create(db, aux, args, false)
     }
 
-    fn best_index(&self, info: &mut IndexInfo) -> Result<()> {
+    fn best_index(&self, info: &mut IndexInfo) -> Result<bool> {
         println!(
             "VTabLog::best_index({}, num_of_order_by: {}, col_used: {}, distinct: {:?})",
             self.i_inst,
@@ -146,7 +151,7 @@ unsafe impl<'vtab> VTab<'vtab> for VTabLog {
             info.set_in_constraint(idx, true)?;
             info.constraint_usage(idx).set_argv_index(1);
         }
-        Ok(())
+        Ok(true)
     }
 
     fn open(&'vtab mut self) -> Result<Self::Cursor> {

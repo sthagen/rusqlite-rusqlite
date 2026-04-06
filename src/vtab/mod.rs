@@ -286,7 +286,8 @@ pub unsafe trait VTab<'vtab>: Sized {
 
     /// Determine the best way to access the virtual table.
     /// (See [SQLite doc](https://sqlite.org/vtab.html#the_xbestindex_method))
-    fn best_index(&self, info: &mut IndexInfo) -> Result<()>;
+    /// Returning `Ok(false)` means unusable / `SQLITE_CONSTRAINT`.
+    fn best_index(&self, info: &mut IndexInfo) -> Result<bool>;
 
     /// Create a new cursor used for accessing a virtual table.
     /// (See [SQLite doc](https://sqlite.org/vtab.html#the_xopen_method))
@@ -1284,7 +1285,11 @@ where
 {
     let vt = vtab.cast::<T>();
     let mut idx_info = IndexInfo(info);
-    vtab_error(vtab, (*vt).best_index(&mut idx_info))
+    match (*vt).best_index(&mut idx_info) {
+        Ok(true) => ffi::SQLITE_OK,
+        Ok(false) => ffi::SQLITE_CONSTRAINT,
+        err => vtab_error(vtab, err),
+    }
 }
 
 unsafe extern "C" fn rust_disconnect<'vtab, T>(vtab: *mut sqlite3_vtab) -> c_int
