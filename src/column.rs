@@ -227,7 +227,7 @@ impl Statement<'_> {
                     s.to_str()
                         .expect("Invalid UTF-8 sequence in column origin name")
                 }),
-            })
+            });
         }
         col_mets
     }

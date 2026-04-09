@@ -1,23 +1,26 @@
-//! Port of C [vtablog](http://www.sqlite.org/cgi/src/finfo?name=ext/misc/vtablog.c)
-use std::ffi::c_int;
+//! Port of C [vtablog](https://sqlite.org/src/file/ext/misc/vtablog.c)
+use std::ffi::{c_int, CStr};
 use std::marker::PhantomData;
-use std::str::FromStr;
+use std::str::FromStr as _;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use fallible_iterator::FallibleIterator;
+use fallible_iterator::FallibleIterator as _;
 
 use crate::types::Type;
 use crate::vtab::{
-    update_module_with_tx, Context, CreateVTab, Filters, IndexInfo, Inserts, TransactionVTab,
-    UpdateVTab, Updates, VTab, VTabConnection, VTabCursor, VTabKind,
+    Context, CreateVTab, Filters, IndexInfo, Inserts, Module, TransactionVTab, UpdateVTab, Updates,
+    VTab, VTabConnection, VTabCursor, VTabKind,
 };
 use crate::{ffi, ValueRef};
 use crate::{Connection, Error, Result};
 
+const MODULE_NAME: &CStr = c"vtablog";
+
 /// Register the "vtablog" module.
 pub fn load_module(conn: &Connection) -> Result<()> {
+    const MODULE: Module<VTabLog> = Module::update_module_with_tx();
     let aux: Option<()> = None;
-    conn.create_module(c"vtablog", update_module_with_tx::<VTabLog>(), aux)
+    conn.create_module(MODULE_NAME, &MODULE, aux)
 }
 
 /// An instance of the vtablog virtual table
@@ -38,10 +41,13 @@ struct VTabLog {
 impl VTabLog {
     fn connect_create(
         db: &mut VTabConnection,
-        _: Option<&()>,
+        aux: Option<&()>,
         args: &[&[u8]],
         is_create: bool,
     ) -> Result<(String, Self)> {
+        debug_assert_eq!(aux, None);
+        debug_assert_eq!(args[0], MODULE_NAME.to_bytes());
+        debug_assert!(args.len() >= 3);
         static N_INST: AtomicUsize = AtomicUsize::new(1);
         let i_inst = N_INST.fetch_add(1, Ordering::SeqCst);
         println!(
@@ -63,7 +69,7 @@ impl VTabLog {
                             "more than one '{param}' parameter"
                         )));
                     }
-                    schema = Some(value.to_owned())
+                    schema = Some(value.to_owned());
                 }
                 "rows" => {
                     if n_row.is_some() {
@@ -72,7 +78,7 @@ impl VTabLog {
                         )));
                     }
                     if let Ok(n) = i64::from_str(value) {
-                        n_row = Some(n)
+                        n_row = Some(n);
                     }
                 }
                 _ => {
@@ -114,7 +120,7 @@ unsafe impl<'vtab> VTab<'vtab> for VTabLog {
         Self::connect_create(db, aux, args, false)
     }
 
-    fn best_index(&self, info: &mut IndexInfo) -> Result<()> {
+    fn best_index(&self, info: &mut IndexInfo) -> Result<bool> {
         println!(
             "VTabLog::best_index({}, num_of_order_by: {}, col_used: {}, distinct: {:?})",
             self.i_inst,
@@ -145,7 +151,7 @@ unsafe impl<'vtab> VTab<'vtab> for VTabLog {
             info.set_in_constraint(idx, true)?;
             info.constraint_usage(idx).set_argv_index(1);
         }
-        Ok(())
+        Ok(true)
     }
 
     fn open(&'vtab mut self) -> Result<Self::Cursor> {
@@ -333,7 +339,7 @@ unsafe impl VTabCursor for VTabLogCursor<'_> {
         if i == 0 {
             println!("  db busy: {:?}", unsafe {
                 ctx.get_connection().map(|c| c.is_busy())
-            })
+            });
         }
         ctx.set_result(&value)
     }

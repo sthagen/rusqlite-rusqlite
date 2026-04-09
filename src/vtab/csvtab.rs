@@ -1,6 +1,6 @@
 //! CSV Virtual Table.
 //!
-//! Port of [csv](http://www.sqlite.org/cgi/src/finfo?name=ext/misc/csv.c) C
+//! Port of [csv](https://sqlite.org/src/file/ext/misc/csv.c) C
 //! extension: `https://www.sqlite.org/csv.html`
 //!
 //! # Example
@@ -21,7 +21,7 @@
 //!     Ok(())
 //! }
 //! ```
-use std::ffi::c_int;
+use std::ffi::{c_int, CStr};
 use std::fs::File;
 use std::marker::PhantomData;
 use std::path::Path;
@@ -30,10 +30,12 @@ use std::str;
 use crate::ffi;
 use crate::types::Null;
 use crate::vtab::{
-    escape_double_quote, parse_boolean, read_only_module, Context, CreateVTab, Filters, IndexInfo,
-    VTab, VTabConfig, VTabConnection, VTabCursor, VTabKind,
+    escape_double_quote, parse_boolean, Context, CreateVTab, Filters, IndexInfo, Module, VTab,
+    VTabConfig, VTabConnection, VTabCursor, VTabKind,
 };
 use crate::{Connection, Error, Result};
+
+const MODULE_NAME: &CStr = c"csv";
 
 /// Register the "csv" module.
 /// ```sql
@@ -47,8 +49,9 @@ use crate::{Connection, Error, Result};
 /// );
 /// ```
 pub fn load_module(conn: &Connection) -> Result<()> {
+    const MODULE: Module<CsvTab> = Module::read_only_module();
     let aux: Option<()> = None;
-    conn.create_module(c"csv", read_only_module::<CsvTab>(), aux)
+    conn.create_module(MODULE_NAME, &MODULE, aux)
 }
 
 /// An instance of the CSV virtual table
@@ -89,9 +92,11 @@ unsafe impl<'vtab> VTab<'vtab> for CsvTab {
 
     fn connect(
         db: &mut VTabConnection,
-        _aux: Option<&()>,
+        aux: Option<&()>,
         args: &[&[u8]],
     ) -> Result<(String, Self)> {
+        debug_assert_eq!(aux, None);
+        debug_assert_eq!(args[0], MODULE_NAME.to_bytes());
         if args.len() < 4 {
             return Err(Error::ModuleError("no CSV file specified".to_owned()));
         }
@@ -233,9 +238,9 @@ unsafe impl<'vtab> VTab<'vtab> for CsvTab {
     }
 
     // Only a forward full table scan is supported.
-    fn best_index(&self, info: &mut IndexInfo) -> Result<()> {
+    fn best_index(&self, info: &mut IndexInfo) -> Result<bool> {
         info.set_estimated_cost(1_000_000.);
-        Ok(())
+        Ok(true)
     }
 
     fn open(&mut self) -> Result<CsvTabCursor<'_>> {
@@ -347,7 +352,7 @@ mod test {
 
     use crate::vtab::csvtab;
     use crate::{Connection, Result};
-    use fallible_iterator::FallibleIterator;
+    use fallible_iterator::FallibleIterator as _;
 
     #[cfg_attr(
         all(target_family = "wasm", target_os = "unknown"),

@@ -189,7 +189,7 @@ mod test {
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     use crate::{Connection, Result};
-    use fallible_streaming_iterator::FallibleStreamingIterator;
+    use fallible_streaming_iterator::FallibleStreamingIterator as _;
     use std::cmp::Ordering;
     use unicase::UniCase;
 
