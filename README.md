@@ -143,6 +143,9 @@ features](https://doc.rust-lang.org/cargo/reference/manifest.html#the-features-s
 * `rusqlite-macros` enables the use of the [`prepare_and_bind`](https://docs.rs/rusqlite/~0/rusqlite/macro.prepare_and_bind.html)
   and [`prepare_cached_and_bind`](https://docs.rs/rusqlite/~0/rusqlite/macro.prepare_cached_and_bind.html)
   procedural macros, which allow capturing identifiers in SQL statements.
+* `ffi-sqlite-wasm-rs` switches to using the `sqlite-wasm-rs` crate (instead of
+  `libsqlite3-sys`) on `wasm32-unknown-unknown` builds. This is enabled by
+  default and can be opted out by setting `default-features = false`.
 
 
 ## Notes on building rusqlite and libsqlite3-sys
