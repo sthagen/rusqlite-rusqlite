@@ -3,6 +3,7 @@
 //! Port of C [generate series
 //! "function"](https://sqlite.org/src/file/ext/misc/series.c):
 //! `https://www.sqlite.org/series.html`
+use std::borrow::Cow;
 use std::ffi::{c_int, CStr};
 use std::marker::PhantomData;
 
@@ -62,16 +63,20 @@ unsafe impl<'vtab> VTab<'vtab> for SeriesTab {
     fn connect(
         db: &mut VTabConnection,
         aux: Option<&()>,
-        args: &[&[u8]],
-    ) -> Result<(String, Self)> {
+        module_name: &[u8],
+        _database_name: &[u8],
+        table_name: &[u8],
+        _args: &[&[u8]],
+    ) -> Result<(Cow<'static, CStr>, Self)> {
         debug_assert_eq!(aux, None);
-        debug_assert_eq!(args[0], MODULE_NAME.to_bytes());
+        debug_assert_eq!(module_name, MODULE_NAME.to_bytes());
+        debug_assert_eq!(table_name, MODULE_NAME.to_bytes());
         let vtab = Self {
             base: ffi::sqlite3_vtab::default(),
         };
         db.config(VTabConfig::Innocuous)?;
         Ok((
-            "CREATE TABLE x(value,start hidden,stop hidden,step hidden)".to_owned(),
+            Cow::Borrowed(c"CREATE TABLE x(value,start hidden,stop hidden,step hidden)"),
             vtab,
         ))
     }
@@ -157,11 +162,12 @@ unsafe impl<'vtab> VTab<'vtab> for SeriesTab {
     }
 
     fn open(&mut self) -> Result<SeriesTabCursor<'_>> {
-        Ok(SeriesTabCursor::new())
+        Ok(SeriesTabCursor::default())
     }
 }
 
 /// A cursor for the Series virtual table
+#[derive(Default)]
 #[repr(C)]
 struct SeriesTabCursor<'vtab> {
     /// Base class. Must be first
@@ -179,21 +185,6 @@ struct SeriesTabCursor<'vtab> {
     /// Increment ("step")
     step: i64,
     phantom: PhantomData<&'vtab SeriesTab>,
-}
-
-impl SeriesTabCursor<'_> {
-    fn new<'vtab>() -> SeriesTabCursor<'vtab> {
-        SeriesTabCursor {
-            base: ffi::sqlite3_vtab_cursor::default(),
-            is_desc: false,
-            row_id: 0,
-            value: 0,
-            min_value: 0,
-            max_value: 0,
-            step: 0,
-            phantom: PhantomData,
-        }
-    }
 }
 
 unsafe impl VTabCursor for SeriesTabCursor<'_> {

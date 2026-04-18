@@ -281,8 +281,11 @@ pub unsafe trait VTab<'vtab>: Sized {
     fn connect(
         db: &mut VTabConnection,
         aux: Option<&Self::Aux>,
+        module_name: &[u8],
+        database_name: &[u8],
+        table_name: &[u8],
         args: &[&[u8]],
-    ) -> Result<(String, Self)>;
+    ) -> Result<(Cow<'static, CStr>, Self)>;
 
     /// Determine the best way to access the virtual table.
     /// (See [SQLite doc](https://sqlite.org/vtab.html#the_xbestindex_method))
@@ -312,9 +315,12 @@ pub trait CreateVTab<'vtab>: VTab<'vtab> {
     fn create(
         db: &mut VTabConnection,
         aux: Option<&Self::Aux>,
+        module_name: &[u8],
+        database_name: &[u8],
+        table_name: &[u8],
         args: &[&[u8]],
-    ) -> Result<(String, Self)> {
-        Self::connect(db, aux, args)
+    ) -> Result<(Cow<'static, CStr>, Self)> {
+        Self::connect(db, aux, module_name, database_name, table_name, args)
     }
 
     /// Destroy the underlying table implementation. This method undoes the work
@@ -1214,24 +1220,18 @@ where
         .iter()
         .map(|&cs| CStr::from_ptr(cs).to_bytes()) // FIXME .to_str() -> Result<&str, Utf8Error>
         .collect::<Vec<_>>();
-    match T::create(&mut conn, aux.as_ref(), &vec[..]) {
-        Ok((sql, vtab)) => match std::ffi::CString::new(sql) {
-            Ok(c_sql) => {
-                let rc = ffi::sqlite3_declare_vtab(db, c_sql.as_ptr());
-                if rc == ffi::SQLITE_OK {
-                    let boxed_vtab: *mut T = Box::into_raw(Box::new(vtab));
-                    *pp_vtab = boxed_vtab.cast::<sqlite3_vtab>();
-                    ffi::SQLITE_OK
-                } else {
-                    let err = error_from_sqlite_code(rc, None);
-                    to_sqlite_error(&err, err_msg)
-                }
+    match T::create(&mut conn, aux.as_ref(), vec[0], vec[1], vec[2], &vec[3..]) {
+        Ok((sql, vtab)) => {
+            let rc = ffi::sqlite3_declare_vtab(db, sql.as_ptr());
+            if rc == ffi::SQLITE_OK {
+                let boxed_vtab: *mut T = Box::into_raw(Box::new(vtab));
+                *pp_vtab = boxed_vtab.cast::<sqlite3_vtab>();
+                ffi::SQLITE_OK
+            } else {
+                let err = error_from_sqlite_code(rc, None);
+                to_sqlite_error(&err, err_msg)
             }
-            Err(err) => {
-                *err_msg = alloc(&err.to_string());
-                ffi::SQLITE_ERROR
-            }
-        },
+        }
         Err(err) => to_sqlite_error(&err, err_msg),
     }
 }
@@ -1254,24 +1254,18 @@ where
         .iter()
         .map(|&cs| CStr::from_ptr(cs).to_bytes()) // FIXME .to_str() -> Result<&str, Utf8Error>
         .collect::<Vec<_>>();
-    match T::connect(&mut conn, aux.as_ref(), &vec[..]) {
-        Ok((sql, vtab)) => match std::ffi::CString::new(sql) {
-            Ok(c_sql) => {
-                let rc = ffi::sqlite3_declare_vtab(db, c_sql.as_ptr());
-                if rc == ffi::SQLITE_OK {
-                    let boxed_vtab: *mut T = Box::into_raw(Box::new(vtab));
-                    *pp_vtab = boxed_vtab.cast::<sqlite3_vtab>();
-                    ffi::SQLITE_OK
-                } else {
-                    let err = error_from_sqlite_code(rc, None);
-                    to_sqlite_error(&err, err_msg)
-                }
+    match T::connect(&mut conn, aux.as_ref(), vec[0], vec[1], vec[2], &vec[3..]) {
+        Ok((sql, vtab)) => {
+            let rc = ffi::sqlite3_declare_vtab(db, sql.as_ptr());
+            if rc == ffi::SQLITE_OK {
+                let boxed_vtab: *mut T = Box::into_raw(Box::new(vtab));
+                *pp_vtab = boxed_vtab.cast::<sqlite3_vtab>();
+                ffi::SQLITE_OK
+            } else {
+                let err = error_from_sqlite_code(rc, None);
+                to_sqlite_error(&err, err_msg)
             }
-            Err(err) => {
-                *err_msg = alloc(&err.to_string());
-                ffi::SQLITE_ERROR
-            }
-        },
+        }
         Err(err) => to_sqlite_error(&err, err_msg),
     }
 }

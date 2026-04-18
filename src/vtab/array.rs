@@ -26,6 +26,7 @@
 //! }
 //! ```
 
+use std::borrow::Cow;
 use std::ffi::{c_int, CStr};
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -74,14 +75,22 @@ unsafe impl<'vtab> VTab<'vtab> for ArrayTab {
     type Aux = ();
     type Cursor = ArrayTabCursor<'vtab>;
 
-    fn connect(_: &mut VTabConnection, aux: Option<&()>, args: &[&[u8]]) -> Result<(String, Self)> {
+    fn connect(
+        _: &mut VTabConnection,
+        aux: Option<&()>,
+        module_name: &[u8],
+        _database_name: &[u8],
+        table_name: &[u8],
+        args: &[&[u8]],
+    ) -> Result<(Cow<'static, CStr>, Self)> {
         debug_assert_eq!(aux, None);
-        debug_assert_eq!(args.len(), 3);
-        debug_assert_eq!(args[0], MODULE_NAME.to_bytes());
+        debug_assert_eq!(module_name, MODULE_NAME.to_bytes());
+        debug_assert_eq!(table_name, MODULE_NAME.to_bytes());
+        debug_assert_eq!(args.len(), 0);
         let vtab = Self {
             base: ffi::sqlite3_vtab::default(),
         };
-        Ok(("CREATE TABLE x(value,pointer hidden)".to_owned(), vtab))
+        Ok((Cow::Borrowed(c"CREATE TABLE x(value,pointer hidden)"), vtab))
     }
 
     fn best_index(&self, info: &mut IndexInfo) -> Result<bool> {
@@ -113,11 +122,12 @@ unsafe impl<'vtab> VTab<'vtab> for ArrayTab {
     }
 
     fn open(&mut self) -> Result<ArrayTabCursor<'_>> {
-        Ok(ArrayTabCursor::new())
+        Ok(ArrayTabCursor::default())
     }
 }
 
 /// A cursor for the Array virtual table
+#[derive(Default)]
 #[repr(C)]
 struct ArrayTabCursor<'vtab> {
     /// Base class. Must be first
@@ -130,15 +140,6 @@ struct ArrayTabCursor<'vtab> {
 }
 
 impl ArrayTabCursor<'_> {
-    fn new<'vtab>() -> ArrayTabCursor<'vtab> {
-        ArrayTabCursor {
-            base: ffi::sqlite3_vtab_cursor::default(),
-            row_id: 0,
-            ptr: None,
-            phantom: PhantomData,
-        }
-    }
-
     fn len(&self) -> i64 {
         match self.ptr {
             Some(a) => a.len() as i64,
