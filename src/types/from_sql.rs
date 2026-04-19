@@ -95,6 +95,13 @@ impl Error for FromSqlError {
     }
 }
 
+impl From<Utf8Error> for FromSqlError {
+    #[cold]
+    fn from(err: Utf8Error) -> Self {
+        Self::Utf8Error(err)
+    }
+}
+
 /// Result type for implementors of the [`FromSql`] trait.
 pub type FromSqlResult<T> = Result<T, FromSqlError>;
 
