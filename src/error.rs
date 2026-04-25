@@ -407,6 +407,14 @@ impl Error {
     pub fn sqlite_error_code(&self) -> Option<ffi::ErrorCode> {
         self.sqlite_error().map(|error| error.code)
     }
+
+    /// Returns the underlying SQLite extended error code if this is
+    /// [`Error::SqliteFailure`].
+    #[inline]
+    #[must_use]
+    pub fn sqlite_extended_error_code(&self) -> Option<c_int> {
+        self.sqlite_error().map(|error| error.extended_code)
+    }
 }
 
 // These are public but not re-exported by lib.rs, so only visible within crate.

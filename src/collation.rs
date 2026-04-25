@@ -148,10 +148,17 @@ impl InnerConnection {
                 callback(&conn, collation_name)
             })
             .unwrap_or_else(|_| Err(Error::UnwindingPanic));
-            if res.is_err() {
+            if let Err(err) = res {
                 #[cfg(feature = "modern_sqlite")]
                 // 3.51.0
-                let _ = crate::error::set_errmsg(arg2, ffi::SQLITE_ERROR, Some(c"FIXME"));
+                if let Ok(msg) = std::ffi::CString::new(format!("{}", err)) {
+                    let _ = crate::error::set_errmsg(
+                        arg2,
+                        err.sqlite_extended_error_code()
+                            .unwrap_or(ffi::SQLITE_ERROR),
+                        Some(&msg),
+                    );
+                }
                 return;
             }
         }
