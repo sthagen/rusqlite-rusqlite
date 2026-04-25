@@ -1100,7 +1100,7 @@ impl Connection {
     }
 
     /// Set error code and message
-    #[cfg(all(feature = "modern_sqlite", not(feature = "bundled-sqlcipher")))] // 3.51.0
+    #[cfg(feature = "modern_sqlite")] // 3.51.0
     pub fn set_errmsg(&self, code: c_int, msg: Option<&std::ffi::CStr>) -> Result<()> {
         unsafe { error::set_errmsg(self.handle(), code, msg) }
     }

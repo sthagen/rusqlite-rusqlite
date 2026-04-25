@@ -149,7 +149,7 @@ impl InnerConnection {
             })
             .unwrap_or_else(|_| Err(Error::UnwindingPanic));
             if res.is_err() {
-                #[cfg(all(feature = "modern_sqlite", not(feature = "bundled-sqlcipher")))]
+                #[cfg(feature = "modern_sqlite")]
                 // 3.51.0
                 let _ = crate::error::set_errmsg(arg2, ffi::SQLITE_ERROR, Some(c"FIXME"));
                 return;
