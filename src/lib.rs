@@ -2344,4 +2344,20 @@ mod test {
         let db = Connection::open_in_memory()?;
         db.release_memory()
     }
+
+    #[test]
+    #[cfg(feature = "modern_sqlite")] // 3.51.0
+    fn set_errmsg() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let code: i32 = ffi::SQLITE_MISUSE;
+        let msg = c"Oops";
+        db.set_errmsg(code, Some(msg))?;
+        let ptr = unsafe { db.handle() };
+        assert_eq!(unsafe { ffi::sqlite3_errcode(ptr) }, code);
+        assert_eq!(
+            unsafe { std::ffi::CStr::from_ptr(ffi::sqlite3_errmsg(ptr)) },
+            msg
+        );
+        Ok(())
+    }
 }

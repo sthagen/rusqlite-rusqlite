@@ -195,7 +195,7 @@ mod test {
     #[cfg(all(target_family = "wasm", target_os = "unknown"))]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    use crate::{Connection, Result};
+    use crate::{error, ffi, Connection, Result};
     use fallible_streaming_iterator::FallibleStreamingIterator as _;
     use std::cmp::Ordering;
     use unicase::UniCase;
@@ -236,6 +236,23 @@ mod test {
         let db = Connection::open_in_memory()?;
         db.collation_needed(collation_needed)?;
         collate(db)
+    }
+
+    #[test]
+    fn test_collation_needed_error() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        db.collation_needed(|_, _| {
+            Err(error::error_from_sqlite_code(
+                ffi::SQLITE_ERROR,
+                Some("Oops".to_owned()),
+            ))
+        })?;
+        let err = collate(db).unwrap_err();
+        assert_eq!(
+            err.sqlite_extended_error_code(),
+            Some(ffi::SQLITE_ERROR_MISSING_COLLSEQ)
+        );
+        Ok(())
     }
 
     #[test]
