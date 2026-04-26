@@ -323,6 +323,7 @@ mod test {
     use std::sync::Arc;
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_integral_ranges() -> Result<()> {
         let db = Connection::open_in_memory()?;
 
@@ -363,6 +364,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_nonzero_ranges() -> Result<()> {
         let db = Connection::open_in_memory()?;
 
@@ -431,6 +433,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_cow() -> Result<()> {
         let db = Connection::open_in_memory()?;
 
@@ -453,6 +456,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_heap_slice() -> Result<()> {
         let db = Connection::open_in_memory()?;
 

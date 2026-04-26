@@ -483,7 +483,7 @@ macro_rules! tuples_try_from_row {
 
 tuples_try_from_row!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 
-#[cfg(test)]
+#[cfg(all(test, not(miri)))]
 mod tests {
     #[cfg(all(target_family = "wasm", target_os = "unknown"))]
     use wasm_bindgen_test::wasm_bindgen_test as test;

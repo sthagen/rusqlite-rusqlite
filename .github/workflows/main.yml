@@ -201,6 +201,19 @@ jobs:
       # Clippy with all non-conflicting features
       - run: cargo clippy --all-targets --workspace --features 'bundled-full session buildtime_bindgen preupdate_hook' -- -D warnings
 
+  # Ensure miri doesn't complain.
+  miri:
+    name: Miri
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hecrj/setup-rust-action@v2
+        with:
+          rust-version: nightly
+          components: miri
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo miri test --lib --features bundled-full
+
   # Ensure patch is formatted.
   fmt:
     name: Format
