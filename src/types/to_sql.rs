@@ -28,9 +28,9 @@ pub enum ToSqlOutput<'a> {
     #[cfg(feature = "pointer")]
     Pointer(
         (
-            *const std::os::raw::c_void,
+            *const std::ffi::c_void,
             &'static std::ffi::CStr,
-            Option<unsafe extern "C" fn(arg1: *mut ::std::os::raw::c_void)>,
+            crate::ffi::sqlite3_destructor_type,
         ),
     ),
 }
@@ -42,13 +42,13 @@ impl<'a> ToSqlOutput<'a> {
     /// # Warning
     /// Leak memory if an error happens before the returned pointer is bound to an SQLite statement.
     pub fn from_rc<T>(rc: std::rc::Rc<T>, ptr_type: &'static std::ffi::CStr) -> ToSqlOutput<'a> {
-        unsafe extern "C" fn free_rc(p: *mut std::ffi::c_void) {
-            std::rc::Rc::decrement_strong_count(p);
+        unsafe extern "C" fn free_rc<T>(p: *mut std::ffi::c_void) {
+            std::rc::Rc::decrement_strong_count(p.cast::<T>());
         }
         ToSqlOutput::Pointer((
             std::rc::Rc::into_raw(rc).cast::<std::ffi::c_void>(),
             ptr_type,
-            Some(free_rc),
+            Some(free_rc::<T>),
         ))
     }
     /// Pass a `Box` as a raw pointer to SQLite
