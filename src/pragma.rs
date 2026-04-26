@@ -300,6 +300,7 @@ mod test {
     use crate::{Connection, Result};
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn pragma_query_value() -> Result<()> {
         let db = Connection::open_in_memory()?;
         let user_version: i32 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -308,6 +309,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn pragma_func_query_value() -> Result<()> {
         let db = Connection::open_in_memory()?;
         let user_version: i32 =
@@ -317,6 +319,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn pragma_query_no_schema() -> Result<()> {
         let db = Connection::open_in_memory()?;
         let mut user_version = -1;
@@ -329,6 +332,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn pragma_query_with_schema() -> Result<()> {
         let db = Connection::open_in_memory()?;
         let mut user_version = -1;
@@ -341,6 +345,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn pragma() -> Result<()> {
         let db = Connection::open_in_memory()?;
         let mut columns = Vec::new();
@@ -354,6 +359,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn pragma_func() -> Result<()> {
         let db = Connection::open_in_memory()?;
         let mut table_info = db.prepare("SELECT * FROM pragma_table_info(?1)")?;
@@ -369,12 +375,14 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn pragma_update() -> Result<()> {
         let db = Connection::open_in_memory()?;
         db.pragma_update(None, "user_version", 1)
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn pragma_update_and_check() -> Result<()> {
         let db = Connection::open_in_memory()?;
         let journal_mode: String =
@@ -418,6 +426,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn locking_mode() -> Result<()> {
         let db = Connection::open_in_memory()?;
         db.pragma_update(None, "locking_mode", "exclusive")?;

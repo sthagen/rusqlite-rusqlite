@@ -133,6 +133,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_limit() -> Result<()> {
         let db = Connection::open_in_memory()?;
         db.set_limit(Limit::SQLITE_LIMIT_LENGTH, 1024)?;
