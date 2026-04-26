@@ -1566,7 +1566,7 @@ pub mod array;
 pub mod csvtab;
 #[cfg(feature = "series")]
 pub mod series; // SQLite >= 3.9.0
-#[cfg(all(test, feature = "modern_sqlite"))]
+#[cfg(all(test, feature = "modern_sqlite", not(miri)))]
 mod vtablog;
 
 #[cfg(test)]

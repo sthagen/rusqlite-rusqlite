@@ -897,7 +897,7 @@ pub enum StatementStatus {
     MemUsed = 99,
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(miri)))]
 mod test {
     #[cfg(all(target_family = "wasm", target_os = "unknown"))]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -1309,6 +1309,10 @@ mod test {
         stmt.parameter_index("test")?;
         let err = stmt.step().unwrap_err();
         assert_eq!(err.sqlite_error_code(), Some(crate::ErrorCode::ApiMisuse));
+        assert_eq!(
+            err.sqlite_extended_error_code(),
+            Some(crate::ffi::SQLITE_MISUSE)
+        );
         // error msg is different with sqlcipher, so we use assert_ne:
         assert_ne!(err.to_string(), "not an error".to_owned());
         stmt.reset()?; // SQLITE_OMIT_AUTORESET = false
