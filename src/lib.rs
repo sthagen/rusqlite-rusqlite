@@ -100,7 +100,6 @@ pub use crate::load_extension_guard::LoadExtensionGuard;
 pub use crate::params::{Params, ParamsFromIter, params_from_iter};
 pub use crate::row::{AndThenRows, Map, MappedRows, Row, RowIndex, Rows};
 pub use crate::statement::{Statement, StatementStatus};
-#[cfg(feature = "modern_sqlite")]
 pub use crate::transaction::TransactionState;
 pub use crate::transaction::{DropBehavior, Savepoint, Transaction, TransactionBehavior};
 pub use crate::types::ToSql;
@@ -1091,7 +1090,6 @@ impl Connection {
     /// ## Failure
     ///
     /// Return an `Error::InvalidDatabaseIndex` if `index` is out of range.
-    #[cfg(feature = "modern_sqlite")] // 3.39.0
     pub fn db_name(&self, index: usize) -> Result<String> {
         unsafe {
             let db = self.handle();
@@ -1105,9 +1103,33 @@ impl Connection {
     }
 
     /// Determine whether an interrupt is currently in effect
-    #[cfg(feature = "modern_sqlite")] // 3.41.0
     pub fn is_interrupted(&self) -> bool {
         self.db.borrow().is_interrupted()
+    }
+
+    /// Set client Data
+    ///
+    /// # Safety
+    /// This function is unsafe because it returns a raw pointer.
+    /// You should not alter the callbacks stored by `rusqlite`.
+    pub unsafe fn set_clientdata<T: Send + 'static, N: Name>(
+        &self,
+        name: N,
+        data: Option<T>,
+    ) -> Result<*mut T> {
+        self.db.borrow_mut().set_clientdata(name, data)
+    }
+    /// Retrieve client data
+    ///
+    /// # Safety
+    /// Caller must be certain that data associated to `name` is of type `T`.
+    pub unsafe fn get_clientdata<T, N: Name>(&self, name: N) -> Result<Option<&T>> {
+        unsafe {
+            self.db
+                .borrow()
+                .get_clientdata(name)
+                .map(|p: *mut T| p.as_ref())
+        }
     }
 
     /// Set error code and message
@@ -1120,34 +1142,25 @@ impl Connection {
     ///
     /// See `https://sqlite.org/c3ref/file_control.html` for details.
     pub fn file_control<N: Name>(&self, db_name: Option<N>, op_and_arg: FileControl) -> Result<()> {
+        fn to_void<X>(r: &mut X) -> *mut c_void {
+            std::ptr::from_mut(r).cast::<c_void>()
+        }
         let (op, arg) = match op_and_arg {
-            FileControl::SizeHint(p) => (ffi::SQLITE_FCNTL_SIZE_HINT, p as *mut _ as *mut c_void),
-            FileControl::SizeLimit(p) => (ffi::SQLITE_FCNTL_SIZE_LIMIT, p as *mut _ as *mut c_void),
-            FileControl::ChunkSize(p) => (ffi::SQLITE_FCNTL_CHUNK_SIZE, p as *mut _ as *mut c_void),
-            FileControl::PersistWal(p) => {
-                (ffi::SQLITE_FCNTL_PERSIST_WAL, p as *mut _ as *mut c_void)
+            FileControl::SizeHint(p) => (ffi::SQLITE_FCNTL_SIZE_HINT, to_void(p)),
+            FileControl::SizeLimit(p) => (ffi::SQLITE_FCNTL_SIZE_LIMIT, to_void(p)),
+            FileControl::ChunkSize(p) => (ffi::SQLITE_FCNTL_CHUNK_SIZE, to_void(p)),
+            FileControl::PersistWal(p) => (ffi::SQLITE_FCNTL_PERSIST_WAL, to_void(p)),
+            FileControl::PowerSafeOverwrite(p) => {
+                (ffi::SQLITE_FCNTL_POWERSAFE_OVERWRITE, to_void(p))
             }
-            FileControl::PowerSafeOverwrite(p) => (
-                ffi::SQLITE_FCNTL_POWERSAFE_OVERWRITE,
-                p as *mut _ as *mut c_void,
-            ),
-            FileControl::MMapSize(p) => (ffi::SQLITE_FCNTL_MMAP_SIZE, p as *mut _ as *mut c_void),
+            FileControl::MMapSize(p) => (ffi::SQLITE_FCNTL_MMAP_SIZE, to_void(p)),
             #[cfg(unix)]
-            FileControl::HasMoved(p) => (ffi::SQLITE_FCNTL_HAS_MOVED, p as *mut _ as *mut c_void),
-            FileControl::LockTimeout(p) => {
-                (ffi::SQLITE_FCNTL_LOCK_TIMEOUT, p as *mut _ as *mut c_void)
-            }
+            FileControl::HasMoved(p) => (ffi::SQLITE_FCNTL_HAS_MOVED, to_void(p)),
+            FileControl::LockTimeout(p) => (ffi::SQLITE_FCNTL_LOCK_TIMEOUT, to_void(p)),
             #[cfg(feature = "modern_sqlite")]
-            FileControl::BlockOnConnect(p) => (
-                ffi::SQLITE_FCNTL_BLOCK_ON_CONNECT,
-                p as *mut _ as *mut c_void,
-            ),
-            FileControl::DataVersion(p) => {
-                (ffi::SQLITE_FCNTL_DATA_VERSION, p as *mut _ as *mut c_void)
-            }
-            FileControl::ReserveBytes(p) => {
-                (ffi::SQLITE_FCNTL_RESERVE_BYTES, p as *mut _ as *mut c_void)
-            }
+            FileControl::BlockOnConnect(p) => (ffi::SQLITE_FCNTL_BLOCK_ON_CONNECT, to_void(p)),
+            FileControl::DataVersion(p) => (ffi::SQLITE_FCNTL_DATA_VERSION, to_void(p)),
+            FileControl::ReserveBytes(p) => (ffi::SQLITE_FCNTL_RESERVE_BYTES, to_void(p)),
         };
         unsafe { self.db.borrow().file_control(db_name, op, arg) }
     }
@@ -1358,7 +1371,7 @@ pub enum FileControl<'p> {
     //LockState = ffi::SQLITE_FCNTL_LOCKSTATE,
     /// Give the VFS layer a hint of how large the database file will grow to be during the current transaction.
     SizeHint(&'p mut ffi::sqlite3_int64),
-    /// Used by in-memory VFS that implements sqlite3_deserialize() to set an upper bound on the size of the in-memory database.
+    /// Used by in-memory VFS that implements `sqlite3_deserialize()` to set an upper bound on the size of the in-memory database.
     SizeLimit(&'p mut ffi::sqlite3_int64),
     /// Used to request that the VFS extends and truncates the database file in chunks of a size specified by the user.
     ChunkSize(&'p mut c_int),
@@ -2361,7 +2374,6 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "modern_sqlite")]
     fn test_returning() -> Result<()> {
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE foo(x INTEGER PRIMARY KEY)")?;
@@ -2401,7 +2413,6 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "modern_sqlite")]
     fn test_db_name() -> Result<()> {
         let db = Connection::open_in_memory()?;
         assert_eq!(db.db_name(0)?, "main");
@@ -2413,7 +2424,6 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "modern_sqlite")]
     fn test_is_interrupted() -> Result<()> {
         let db = Connection::open_in_memory()?;
         assert!(!db.is_interrupted());
@@ -2426,6 +2436,25 @@ mod test {
     fn release_memory() -> Result<()> {
         let db = Connection::open_in_memory()?;
         db.release_memory()
+    }
+
+    #[test]
+    fn client_data() -> Result<()> {
+        let db = Connection::open_in_memory()?;
+        let name = c"my_data";
+        {
+            unsafe { db.set_clientdata(name, None::<c_void>)? };
+        }
+        {
+            let data = "my_value".to_owned();
+            unsafe { db.set_clientdata(name, Some(data))? };
+        }
+        {
+            if let Some(data) = unsafe { db.get_clientdata::<String, _>(name) }? {
+                assert_eq!(*data, "my_value");
+            }
+        }
+        Ok(())
     }
 
     #[test]

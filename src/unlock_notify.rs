@@ -44,7 +44,7 @@ unsafe extern "C" fn unlock_notify_cb(ap_arg: *mut *mut c_void, n_arg: c_int) {
     unsafe {
         let args = from_raw_parts(ap_arg as *const &UnlockNotification, n_arg as usize);
         for un in args {
-            drop(catch_unwind(std::panic::AssertUnwindSafe(|| un.fired())));
+            drop(catch_unwind(|| un.fired()));
         }
     }
 }
@@ -74,11 +74,7 @@ pub unsafe fn wait_for_unlock_notify(db: *mut ffi::sqlite3) -> c_int {
     let un = UnlockNotification::new();
     let rc = unsafe {
         /* Register for an unlock-notify callback. */
-        ffi::sqlite3_unlock_notify(
-            db,
-            Some(unlock_notify_cb),
-            &un as *const UnlockNotification as *mut c_void,
-        )
+        ffi::sqlite3_unlock_notify(db, Some(unlock_notify_cb), &raw const un as *mut c_void)
     };
     debug_assert!(
         rc == ffi::SQLITE_LOCKED || rc == ffi::SQLITE_LOCKED_SHAREDCACHE || rc == ffi::SQLITE_OK

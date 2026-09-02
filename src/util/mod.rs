@@ -8,12 +8,6 @@ pub(crate) use small_cstr::SmallCString;
 mod sqlite_string;
 pub(crate) use sqlite_string::{SqliteMallocString, alloc};
 
-#[cfg(any(
-    feature = "collation",
-    feature = "functions",
-    feature = "vtab",
-    feature = "pointer"
-))]
 pub(crate) unsafe extern "C" fn free_boxed_value<T>(p: *mut std::ffi::c_void) {
     drop(unsafe { Box::from_raw(p.cast::<T>()) });
 }
@@ -38,7 +32,7 @@ impl std::ops::Deref for Named<'_> {
 }
 
 /// Database, table, column, collation, function, module, vfs name
-pub trait Name: std::fmt::Debug {
+pub trait Name: std::fmt::Debug + Copy {
     /// As C string
     fn as_cstr(&self) -> Result<Named<'_>>;
 }

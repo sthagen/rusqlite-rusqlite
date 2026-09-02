@@ -388,7 +388,6 @@ impl Drop for Savepoint<'_> {
 /// Transaction state of a database
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-#[cfg(feature = "modern_sqlite")] // 3.37.0
 pub enum TransactionState {
     /// Equivalent to `SQLITE_TXN_NONE`
     None,
@@ -523,7 +522,6 @@ impl Connection {
     }
 
     /// Determine the transaction state of a database
-    #[cfg(feature = "modern_sqlite")] // 3.37.0
     pub fn transaction_state<N: crate::Name>(
         &self,
         db_name: Option<N>,
@@ -567,7 +565,7 @@ mod test {
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     use super::DropBehavior;
-    use crate::{Connection, DEFAULT_NAME, Error, Result};
+    use crate::{Connection, Error, Result};
 
     fn checked_memory_handle() -> Result<Connection> {
         let db = Connection::open_in_memory()?;
@@ -801,10 +799,9 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "modern_sqlite")]
     fn txn_state() -> Result<()> {
         use super::TransactionState;
-        use crate::MAIN_DB;
+        use crate::{DEFAULT_NAME, MAIN_DB};
         let db = Connection::open_in_memory()?;
         assert_eq!(TransactionState::None, db.transaction_state(Some(MAIN_DB))?);
         assert_eq!(TransactionState::None, db.transaction_state(DEFAULT_NAME)?);
@@ -819,9 +816,9 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "modern_sqlite")]
     fn auto_commit() -> Result<()> {
         use super::TransactionState;
+        use crate::DEFAULT_NAME;
         let db = Connection::open_in_memory()?;
         db.execute_batch("CREATE TABLE t(i UNIQUE);")?;
         assert!(db.is_autocommit());
