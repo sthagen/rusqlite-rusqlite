@@ -583,6 +583,7 @@ mod bindings {
         let mut bindings = bindgen::builder()
             .default_macro_constant_type(bindgen::MacroTypeVariation::Signed)
             .disable_nested_struct_naming()
+            .generate_comments(false)
             .generate_cstr(true)
             .use_core()
             .trust_clang_mangling(false)
